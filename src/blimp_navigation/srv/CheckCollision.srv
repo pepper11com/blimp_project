@@ -1,0 +1,3 @@
+geometry_msgs/Point[] points_to_check
+---
+bool is_occupied

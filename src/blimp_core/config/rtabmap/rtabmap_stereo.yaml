@@ -1,0 +1,38 @@
+stereo_odometry:
+  ros__parameters:
+    frame_id: "camera_link"
+    odom_frame_id: "odom"
+    publish_tf: true
+    wait_for_transform_duration: 0.2
+    expected_update_rate: 15.0
+    approx_sync: true
+    
+    # --- Odom parameters ---
+    Odom/Strategy: "0"        
+    Vis/MinInliers: "15"
+    Odom/ScanKeyFrameThr: "0.7" 
+    # Set to false because we disabled the IMU
+    Odom/GuessMotion: "false"
+    Vis/FeatureType: "6"
+
+# Parameters for the rtabmap (SLAM) node
+rtabmap_slam:
+  ros__parameters:
+    subscribe_depth: false
+    subscribe_rgb: false
+    subscribe_rgbd: false
+    subscribe_stereo: true
+    approx_sync: true
+
+    # Common parameters
+    frame_id: "camera_link"
+    map_frame_id: "map"
+    publish_tf: true
+    wait_for_transform_duration: 0.2
+    subscribe_odom_info: false
+
+    # --- SLAM parameters ---
+    Kp/DetectorStrategy: "0"
+    Vis/MinInliers: "15"
+    RGBD/ProximityBySpace: "true"
+    Mem/RehearsalSimilarity: "0.45"

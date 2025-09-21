@@ -1,0 +1,68 @@
+rtabmap:
+  ros__parameters:
+    # Core frame configuration
+    frame_id: "base_link"
+    map_frame_id: "map"
+    odom_frame_id: "rtabmap_odom" # From icp_odometry node
+    publish_tf: true
+    tf_delay: 0.05
+    tf_tolerance: 0.1
+    odom_sensor_sync: false
+
+    # Input data subscription (we only use LIDAR)
+    subscribe_depth: false
+    subscribe_rgb: false
+    subscribe_stereo: false
+    subscribe_scan: true
+    subscribe_scan_cloud: false
+    subscribe_odom_info: false
+
+    # Topic names
+    odom_topic: "/rtabmap_odom_raw_msgs"
+
+    # Data synchronization (odom + scan)
+    approx_sync: false
+    queue_size: 100
+    sync_queue_size: 100
+
+    # General SLAM parameters
+    Rtabmap/DetectionRate: "1.0"   # 1Hz for lidar only
+    Rtabmap/TimeThr: "700"
+    Mem/IncrementalMemory: "true"
+    Mem/STMSize: "30"
+
+    # Enable occupancy grid creation
+    RGBD/CreateOccupancyGrid: "true"
+
+    # Loop closure detection (LIDAR)
+    # TODO: we need to check if this is correct for LiDAR only SLAM
+    RGBD/LoopClosureEnabled: "true"
+    RGBD/ProximityBySpace: "true"
+    RGBD/ProximityPathMaxNeighbors: "10"
+    Vis/LoopClosureEnabled: "false"
+
+    # Lidar loop closure
+    Reg/Strategy: "1"                # Using ICP (Lidar)
+    Reg/Force3DoF: "true"
+    Icp/CorrespondenceRatio: "0.1"   # Min inlier ratio for loop closure ICP
+    Icp/MaxTranslation: "0.5"        # Allow larger corrections for loop closure
+    Icp/MaxRotation: "1.0"           # Allow larger rotations for loop closure
+    Icp/Iterations: "30"
+    Icp/VoxelSize: "0.05"
+    Icp/Epsilon: "0.001"
+
+    # 2D occupancy grid map generation (Lidar)
+    Grid/FromDepth: "false"
+    Grid/RayTracing: "true"
+    Grid/CellSize: "0.05"
+    Grid/RangeMin: "0.12"
+    Grid/RangeMax: "10.0"
+    Grid/Sensor: "0"                 # LaserScan
+    Grid/3D: "false"
+
+    # Graph optimization
+    Optimizer/Strategy: "1"          # g2o
+    Optimizer/Iterations: "10"
+    Optimizer/Slam2D: "true"
+
+    Rtabmap/StatisticLogged: "false"   # Debugging RTAB-Map on or off

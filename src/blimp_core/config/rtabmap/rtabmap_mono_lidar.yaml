@@ -1,0 +1,55 @@
+# =========================================================================================
+# MASTER CONFIGURATION for Fused Stereo-Inertial + LiDAR SLAM on a Raspberry Pi 5
+# File: blimp_core/config/blimp_fused.yaml (Version 2 - Explicit Node Names)
+# =========================================================================================
+
+stereo_odometry:
+  ros__parameters:
+    # --- Core Frames & TF ---
+    frame_id: "base_link"
+    odom_frame_id: "odom"
+    publish_tf: true
+    use_sim_time: true
+
+    # --- Subscriptions ---
+    subscribe_stereo: true
+    subscribe_odom_info: true # Publishes detailed info for the SLAM node
+    wait_imu_to_init: true
+
+    # --- Performance ---
+    Mem/ImagePreDecimation: 2
+    Odom/MaxFeatures: 400
+
+rtabmap:
+  ros__parameters:
+    # --- Core Frames & TF ---
+    frame_id: "base_link"
+    map_frame_id: "map"
+    odom_frame_id: "odom"
+    publish_tf: true
+    use_sim_time: true
+    
+    # ─── PRIMARY INPUT DATA SUBSCRIPTIONS (CRITICAL FIX) ───
+    # We are NOT subscribing to /odom from an external source here.
+    # We get odometry from the stereo node's /odom_info topic.
+    subscribe_odom_info: true     # Use the detailed info for graph links
+    subscribe_stereo: true        # Use stereo images for visual features
+    subscribe_scan: true          # Use LiDAR for mapping
+
+    # --- Data Synchronization ---
+    approx_sync: true
+    approx_sync_max_interval: 0.05
+
+    # ─── 3D MAP GENERATION ───
+    Grid/3D: true
+    
+    # ─── MAP DENSITY CONTROL ───
+    Grid/Sensor: 0                # Build grid ONLY from LiDAR scan (0=Scan) for efficiency
+    Grid/FromDepth: false
+    Grid/CellSize: 0.1
+    Grid/RangeMax: 4.0
+    Grid/NoiseFilteringRadius: 0.1
+    Grid/NoiseFilteringMinNeighbors: 4
+
+    # ─── SLAM PERFORMANCE ───
+    Rtabmap/DetectionRate: "3.0"

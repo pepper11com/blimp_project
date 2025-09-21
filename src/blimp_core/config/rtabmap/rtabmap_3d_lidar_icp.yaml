@@ -1,0 +1,75 @@
+rtabmap:
+  ros__parameters:
+
+    # Parameters for RTAB-Map SLAM node (rtabmap_slam) 
+# when using continuous stream of tilted 2D scans as PointCloud2
+
+# General
+    Reg/Strategy: "1"                     # ICP based
+    Reg/Force3DoF: "false"
+    Mem/STMSize: "30"
+
+# Loop Closure Detection (primarily proximity based for lidar-only)
+    Mem/RehearsalSimilarity: "0.40"       # Might need to be slightly more tolerant
+    Rtabmap/LoopThr: "0.15"               # Might need to be slightly more tolerant
+    Rtabmap/LoopRatio: "0.2"
+    RGBD/ProximityMaxGraphDepth: "0"
+    RGBD/ProximityPathMaxNeighbors: "10"
+    RGBD/LocalRadius: "5"
+
+    # ICP for Loop Closure Refinement
+    RGBD/LoopICPMaxIterations: "10"
+    RGBD/LoopICPVoxelSize: "0.05" # Voxel size for ICP during loop closure
+    RGBD/LoopICPMaxCorrespondenceDistance: "0.25"
+
+    # Graph Optimization
+    Optimizer/Strategy: "1" # g2o
+
+    # Grid Map Generation
+    Grid/CellSize: "0.05"
+    Grid/RangeMax: "8.0"  # Max range for projecting points to 2D grid
+    Grid/RangeMin: "0.15"
+    Grid/MaxObstacleHeight: "2.0"
+    Grid/MinGroundHeight: "-0.5"
+    Grid/NormalsSegmentation: "false"
+    Grid/RayTracing: "true"
+    Grid/MaxRayTracingRange: "8.0"
+    Grid/Scan: "true" # Generate grid from scans
+    Grid/Depth: "true" # Allow projection from depth images (though we are not using depth images)
+
+# Point Cloud Filtering / Processing by RTAB-Map
+# Input clouds are already sparse (single tilted scans)
+    cloud_voxel_size: "0.0"             # Disable additional voxel filtering on input, or make it very small (e.g., 0.01)
+                                     # if individual scans are dense enough to benefit.
+    cloud_deskewing: "false"
+    cloud_range_min: "0.15"
+    cloud_range_max: "8.0"               # Consistent with Grid/RangeMax
+    cloud_noise_filtering_radius: "0.1"
+    cloud_noise_filtering_min_neighbors: "2" # More tolerant for sparse slices
+
+    # For RTAB-Map's own ICP (used for loop closure refinement and map updates)
+    Icp/MaxCorrespondenceDistance: "0.25" # For RTAB-Map's internal ICP
+    Icp/VoxelSize: "0.05"                
+    Icp/Iterations: "10"
+    Icp/PointToPlane: "true"
+    Icp/MinCorrespondenceRatio: "0.05"    # Minimum inlier ratio
+
+    # Mapping Rate
+    Rtabmap/DetectionRate: "0"          # Process data as fast as it comes. Monitor CPU.
+                                        # If CPU is too high, try "5.0" (processes at 5Hz if data comes faster)
+    Mem/LaserScanMaxPts: "0"            # Process all points in the incoming (sparse) PointCloud2
+
+    # Accumulation for creating nodes (if DetectionRate is not 0)
+    # Rtabmap/CreateIntermediateNodes: "false" # If true, creates nodes even if not a loop closure
+    Rtabmap/LocalScanMaxDistance: "2.0" # Meters, scans within this distance are merged into local map for a node
+    Rtabmap/LocalScanMaxDiffID: "50"    # Number of previous scans to try to merge for a node's local map
+                                      # This might help build denser local maps for each graph node from sparse inputs
+
+    # Consider how RTAB-Map processes scans into its graph nodes
+# For sparse, high-frequency input, we want RTAB-Map to effectively accumulate
+# several of these tilted scans to build up the representation for each node in its memory.
+# This is implicitly handled by how it updates its short-term memory (STM) and graph.
+# Setting DetectionRate=0 means it tries to make a new node for every input if it's different enough.
+# Keyframe thresholds:
+# Reg/KeyFrameThr (odom quality) and Vis/MaxFeatures (visual) are less relevant here.
+# For lidar, it's more about RGBD/OptimizeMaxError (graph error) and proximity.
