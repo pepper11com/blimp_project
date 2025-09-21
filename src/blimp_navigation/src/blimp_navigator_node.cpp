@@ -69,6 +69,20 @@ public:
     collision_client_ = this->create_client<blimp_navigation::srv::CheckCollision>("/check_collision");
     path_planning_client_ = this->create_client<blimp_navigation::srv::PlanPath>("/plan_path");
 
+    // Wait for collision service to be available
+    if (!collision_client_->wait_for_service(5s)) {
+      RCLCPP_WARN(this->get_logger(), "Collision check service not available after waiting for 5s");
+    } else {
+      RCLCPP_INFO(this->get_logger(), "Collision check service is available");
+    }
+
+    // Wait for collision service to become available
+    if (!collision_client_->wait_for_service(std::chrono::seconds(5))) {
+      RCLCPP_WARN(this->get_logger(), "Collision check service not available after 5 seconds!");
+    } else {
+      RCLCPP_INFO(this->get_logger(), "Collision check service is ready.");
+    }
+
     if (debug_mode_) {
       status_pub_ = this->create_publisher<std_msgs::msg::String>("/blimp_status", 10);
       last_debug_time_ = this->get_clock()->now();
@@ -176,15 +190,19 @@ private:
   void check_for_obstacles()
   {
       if (!collision_client_->service_is_ready()) {
-          obstacle_detected_ = false;
+          RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, 
+                               "Collision check service not ready!");
+          obstacle_detected_ = false; // Fail safe - assume no obstacle if service unavailable
           return;
       }
+      
       auto request = std::make_shared<blimp_navigation::srv::CheckCollision::Request>();
       
-      // ... build points to check ...
+      // Build points to check in front of the blimp
       auto pos = current_pose_.pose.position;
       double forward_x = std::cos(current_heading_rad_);
       double forward_y = std::sin(current_heading_rad_);
+      
       for (double step = 0.3; step <= 1.5; step += 0.12) {
           geometry_msgs::msg::Point p;
           p.x = pos.x + forward_x * step;
@@ -195,10 +213,15 @@ private:
 
       auto result_future = collision_client_->async_send_request(request);
       
-      // Use a short wait to avoid blocking the main loop for too long
-      if (result_future.wait_for(150ms) == std::future_status::ready) {
-          obstacle_detected_ = result_future.get()->is_occupied;
+      // Use a longer wait time to avoid false negatives
+      if (result_future.wait_for(500ms) == std::future_status::ready) {
+          auto response = result_future.get();
+          obstacle_detected_ = response->is_occupied;
+          RCLCPP_DEBUG(this->get_logger(), "Collision check result: %s", 
+                      obstacle_detected_ ? "OBSTACLE DETECTED" : "clear");
       } else {
+          RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, 
+                               "Collision service timeout - using fail-safe (no obstacle)");
           obstacle_detected_ = false; // Fail safe
       }
   }
@@ -258,21 +281,21 @@ private:
             last_debug_time_ = this->get_clock()->now();
             std::stringstream ss;
             ss << "\n=================== BLIMP STATUS (C++) ==================="
-               << "\n- OBSTACLE AHEAD: " << (obstacle_detected_ ? "true" : "false")
+               << "\n- OBSTACLE AHEAD: " << (obstacle_detected_ ? "TRUE - AVOIDING" : "false")
                << "\n----------------------------------------------------"
                << "\n|         |      X     |      Y     |      Z     |"
                << "\n| Current | " << std::fixed << std::setprecision(2) << std::setw(10) << pos.x 
                << " | " << std::setw(10) << pos.y << " | " << std::setw(10) << pos.z << " |"
                << "\n| Goal    | " << std::setw(10) << goal_pos.x << " | " << std::setw(10) << goal_pos.y << " | " << std::setw(10) << goal_pos.z << " |"
                << "\n----------------------------------------------------"
-               << "\n- State:"
+               << "\n- Navigation:"
                << "\n  - Current Heading: " << std::fixed << std::setprecision(1) << current_heading_rad_ * 180.0 / M_PI << " (deg)"
                << "\n  - Distance Error:  " << std::fixed << std::setprecision(2) << distance_to_goal_2d << " (m)"
                << "\n  - Heading Error:   " << std::fixed << std::setprecision(1) << heading_error_rad * 180.0 / M_PI << " (deg)"
-               << "\n- PID Outputs:"
-               << "\n  - Altitude: " << altitude_output << " | Turn: " << turn_output << " | Forward: " << forward_output
-               << "\n- Final Motor Commands (%):"
-               << "\n  - Left (M1): " << left_motor << " | Right (M2): " << right_motor
+               << "\n- Control:"
+               << "\n  - PID Outputs: Alt=" << std::fixed << std::setprecision(1) << altitude_output << " | Turn=" << turn_output << " | Fwd=" << forward_output
+               << "\n  - Motors: L=" << left_motor << "% | R=" << right_motor << "%"
+               << (obstacle_detected_ ? "\n  - ACTION: Stopping forward, turning to avoid obstacle" : "")
                << "\n====================================================";
             
             std_msgs::msg::String msg;

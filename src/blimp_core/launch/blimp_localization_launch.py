@@ -242,23 +242,6 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'start_at_origin', default_value='true',
             description='Start at map origin when localizing (localization mode only).'),
-            # Default neighborhood-check parameters for the octomap checker
-            DeclareLaunchArgument('check_radius', default_value='0.5',
-                description='Neighborhood radius (m) around each point to check.'),
-            DeclareLaunchArgument('check_step', default_value='0.05',
-                description='Sampling step (m); use smaller for denser checks.'),
-            DeclareLaunchArgument('check_use_sphere', default_value='true',
-                description='If true, sample inside a sphere; else a cube.'),
-        # Toggle launching octomap_server (disabled by default; RTAB-Map already publishes OctoMap)
-        DeclareLaunchArgument(
-            'use_octomap_server', default_value='false',
-            description='Launch octomap_server_node (off by default since RTAB-Map publishes OctoMap).'),
-        # Topic used by octomap checker to listen for OctoMap messages.
-        # If RTAB-Map publishes a different topic (e.g., /rtabmap/octomap), set it via this arg.
-        DeclareLaunchArgument(
-            'octomap_topic', default_value='/octomap_binary',
-            description='OctoMap topic to feed the collision checker.'),
-
         # Fail fast if DB is missing
         OpaqueFunction(function=_check_db),
 
@@ -298,33 +281,6 @@ def generate_launch_description():
             parameters=parameters,
             remappings=remappings
             # No -d here: we do not delete DB on start
-        ),
-
-        # 3D OctoMap collision check service
-        Node(
-            package='blimp_navigation', executable='octomap_checker_node', output='screen',
-            name='octomap_checker',
-            remappings=[
-                ('/rtabmap/octomap_obstacles', LaunchConfiguration('octomap_topic'))
-                ],
-                parameters=[{
-                    'check_radius': LaunchConfiguration('check_radius'),
-                    'check_step': LaunchConfiguration('check_step'),
-                    'check_use_sphere': LaunchConfiguration('check_use_sphere')
-                }]
-        ),
-        
-        Node(
-            package='octomap_server',
-            executable='octomap_server_node',
-            name='octomap_server',
-            output='screen',
-            condition=IfCondition(LaunchConfiguration('use_octomap_server')),
-            parameters=[{
-                'frame_id': 'map',     # Global frame
-                'resolution': 0.1,     # Match RTAB-Map Grid/CellSize if comparing
-                'output_color': False
-            }]
         ),
 
         # Odom to Path

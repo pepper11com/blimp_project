@@ -24,7 +24,7 @@ public:
 
         // Revert this change from last time for a cleaner data path
         subscription_ = this->create_subscription<octomap_msgs::msg::Octomap>(
-            "/rtabmap/octomap_obstacles", qos,
+            "/octomap_binary", qos,
             std::bind(&OctomapCheckerNode::octomap_callback, this, std::placeholders::_1));
 
         service_ = this->create_service<blimp_navigation::srv::CheckCollision>(
@@ -150,17 +150,14 @@ private:
         if (check_step <= 0.0) check_step = tree_res;
         if (check_step <= 0.0) check_step = 0.1; // ultimate fallback
 
-        if (tree_) {
-            RCLCPP_INFO(this->get_logger(),
-                        "Checking %zu point(s) against OcTree (res=%.3f, depth=%u, radius=%.3f, step=%.3f, sphere=%s)...",
-                        request->points_to_check.size(), tree_->getResolution(), tree_->getTreeDepth(),
-                        check_radius, check_step, check_use_sphere ? "true" : "false");
-        } else if (color_tree_) {
-            RCLCPP_INFO(this->get_logger(),
-                        "Checking %zu point(s) against ColorOcTree (res=%.3f, depth=%u, radius=%.3f, step=%.3f, sphere=%s)...",
-                        request->points_to_check.size(), color_tree_->getResolution(), color_tree_->getTreeDepth(),
-                        check_radius, check_step, check_use_sphere ? "true" : "false");
-        }
+        // Debug logging only when needed
+        RCLCPP_DEBUG(this->get_logger(),
+                    "Checking %zu point(s) against %s (res=%.3f, depth=%u, radius=%.3f, step=%.3f, sphere=%s)...",
+                    request->points_to_check.size(), 
+                    tree_ ? "OcTree" : "ColorOcTree",
+                    tree_ ? tree_->getResolution() : color_tree_->getResolution(),
+                    tree_ ? tree_->getTreeDepth() : color_tree_->getTreeDepth(),
+                    check_radius, check_step, check_use_sphere ? "true" : "false");
 
         size_t idx = 0;
         for (const auto &point : request->points_to_check) {
@@ -199,8 +196,8 @@ private:
                             const double oz = iz * check_step;
                             if (check_use_sphere && (ox*ox + oy*oy + oz*oz) > r2) continue; // outside sphere
                             if (is_occupied_at(point.x + ox, point.y + oy, point.z + oz)) {
-                                RCLCPP_INFO(this->get_logger(),
-                                            "Collision near (%.3f, %.3f, %.3f) at offset (%.3f, %.3f, %.3f)",
+                                RCLCPP_DEBUG(this->get_logger(),
+                                            "Collision at (%.3f, %.3f, %.3f) offset (%.3f, %.3f, %.3f)",
                                             point.x, point.y, point.z, ox, oy, oz);
                                 hit = true;
                             }
@@ -215,7 +212,7 @@ private:
             }
             ++idx;
         }
-        RCLCPP_INFO(this->get_logger(), "No collisions found.");
+        RCLCPP_DEBUG(this->get_logger(), "No collisions found.");
     }
 
     void handle_plan_path(const std::shared_ptr<blimp_navigation::srv::PlanPath::Request> request,
