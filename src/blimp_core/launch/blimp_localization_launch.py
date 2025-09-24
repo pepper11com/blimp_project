@@ -186,41 +186,50 @@ def generate_launch_description():
         'database_path': LaunchConfiguration('database_path'),
         'RGBD/StartAtOrigin': 'true',
 
-        # Make sure rtabmap can write temp files/logs
-        # 'Rtabmap/WorkingDirectory': '/home/blimp/.ros',
+        'Grid/RangeMax': '0.0',        # infinite range max for depth image projection
+        'Stereo/MinDisparity': '0.05',
+        
 
-        # Wrapper safety: never delete DB on start
+        # never delete DB on start
         'delete_db_on_start': False,
 
-        # === SLAM PERFORMANCE PARAMETERS (kept) ===
+        # === SLAM PERFORMANCE PARAMETERS ===
         'Rtabmap/DetectionRate': '6.0',
         'Mem/ImagePreDecimation': '2',
 
-        # Enable 3D occupancy grid (OctoMap) publication from RTAB-Map
         'Grid/3D': 'true',
+        
+        # === OBSTACLE INFLATION FOR SAFER NAVIGATION ===
+        'Grid/RayTracing': 'true',                   # Ray tracing for better obstacle detection
+        'Grid/3DGroundTruth': 'false',               # Use probabilistic occupancy
+        'Grid/MaxGroundAngle': '45',                 # Max angle for ground classification
+        'Grid/NormalsSegmentation': 'false',         # Disable normal segmentation for speed
+        
+        # INFLATE OBSTACLES - Make obstacles bigger by robot radius
+        'Grid/FootprintRadius': '0.3',               # Blimp safety radius (30cm)!!!!
+        'Grid/FootprintLength': '0.5',               # Blimp length buffer (50cm)!!!!  
+        'Grid/FootprintWidth': '0.25',               # Blimp width buffer (25cm)!!!!
 
         # Publish less metadata to lighten transport/visualization
         'Rtabmap/PublishStats': "False",
         'Rtabmap/PublishLikelihood': "False",
         'Rtabmap/PublishPdf': "False",
 
-        # === POINT CLOUD DENSITY PARAMETERS (kept) ===
-        'Grid/CellSize': '0.1',
-        'Grid/NoiseFilteringRadius': '0.1',
-        'Grid/NoiseFilteringMinNeighbors': '4',
-
-        # Load and assemble all nodes (no cap)
-        'Grid/DepthDecimation': '4',
-        # 'GridGlobal/MaxNodes': '0',
+        # === POINT CLOUD DENSITY PARAMETERS (INFLATED for safety) ===
+        'Grid/CellSize': '0.2',                       # BIGGER voxels: 20cm instead of 5cm default
+        'Grid/NoiseFilteringRadius': '0.1',           # Increased noise filtering
+        'Grid/NoiseFilteringMinNeighbors': '4',       # Reduced for bigger voxels
+        'Grid/DepthDecimation': '2',                  # Less decimation for better coverage
+        'Grid/PreVoxelFiltering': 'true',             # Pre voxel filtering for efficiency
         
-        'map_publish_to_tf': False, # This often helps trigger the publisher
+        'map_publish_to_tf': False, # Not sure if this works :)
     }]
 
-    # Validate DB exists before starting rtabmap
+    # Validating DB exists before starting rtabmap
     def _check_db(context, *args, **kwargs):
         path = LaunchConfiguration('database_path').perform(context)
         if not os.path.isfile(path):
-            raise RuntimeError(f'Database file not found: {path}. Set database_path to an existing rtabmap.db.')
+            raise RuntimeError(f'Database file not found: {path}. Set database_path to an existing rtabmap.db')
         return []
 
     remappings=[
@@ -280,7 +289,7 @@ def generate_launch_description():
             package='rtabmap_slam', executable='rtabmap', output='screen',
             parameters=parameters,
             remappings=remappings
-            # No -d here: we do not delete DB on start
+            # No -d: we do not delete DB on start
         ),
 
         # Odom to Path

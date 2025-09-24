@@ -1,0 +1,26 @@
+# Example OMPL Planner Configuration
+# This is a template configuration file for testing and development
+
+# Basic robot parameters
+robot_radius: 0.3          # Robot radius for collision checking (meters)
+planning_timeout: 10.0     # Maximum planning time (seconds)
+
+# Planner selection
+planner_id: "RRTConnect"   # Available: RRTConnect, RRTstar
+
+# Coordinate frames
+global_frame: "map"        # Global reference frame
+robot_frame: "camera_link" # Robot frame
+
+# Planning bounds - adjust these based on your environment
+bounds_min_x: -10.0
+bounds_max_x: 10.0
+bounds_min_y: -10.0  
+bounds_max_y: 10.0
+bounds_min_z: -0.5
+bounds_max_z: 5.0
+
+# Path optimization settings
+enable_path_simplification: true
+enable_path_smoothing: true
+max_simplification_steps: 100

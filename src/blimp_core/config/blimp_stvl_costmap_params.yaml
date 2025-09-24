@@ -1,0 +1,159 @@
+# Blimp Costmap Configuration with STVL Integration
+# This config creates a lightweight costmap for navigation with temporal obstacle tracking
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      # === BASIC COSTMAP SETTINGS ===
+      update_frequency: 10.0      # 10Hz updates - good balance for blimp
+      publish_frequency: 5.0      # 5Hz publishing - lighter load
+      global_frame: map           # Use map frame for consistency
+      robot_base_frame: base_link
+      
+      # === COSTMAP SIZE - Small for performance ===
+      width: 6                    # 6m x 6m local costmap
+      height: 6                   # Sufficient for blimp maneuvering
+      resolution: 0.1             # 10cm resolution - good detail vs performance
+      
+      # === ROLLING WINDOW ===
+      rolling_window: true        # Follow robot
+      track_unknown_space: false  # Disable for performance
+      
+      # === PLUGIN CONFIGURATION ===
+      plugins: ["stvl_layer", "inflation_layer"]
+      
+      # === STVL OBSTACLE LAYER ===
+      stvl_layer:
+        plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
+        enabled: true
+        
+        # === TEMPORAL DECAY - Super fast for local planning ===
+        voxel_decay: 2.0            # Only 2 seconds! Very responsive
+        decay_model: 0              # Linear (fastest)
+        observation_persistence: 0.0
+        
+        # === SPATIAL SETTINGS ===
+        voxel_size: 0.1             # 10cm voxels
+        mark_threshold: 0
+        obstacle_range: 4.0         # 4m obstacle detection
+        max_obstacle_height: 2.5    # 2.5m ceiling
+        
+        # === PERFORMANCE OPTIMIZATIONS ===
+        track_unknown_space: false
+        publish_voxel_map: false    # Disable for local costmap (performance)
+        update_footprint_enabled: true
+        combination_method: 1       # Max combination
+        transform_tolerance: 0.2
+        
+        # === NO MAPPING ===
+        mapping_mode: false
+        
+        # === OBSERVATION SOURCE ===
+        observation_sources: stereo_depth
+        
+        stereo_depth:
+          enabled: true
+          data_type: PointCloud2
+          topic: /camera/depth/color/points
+          marking: true
+          clearing: true
+          min_obstacle_height: 0.15   # Ignore small ground objects
+          max_obstacle_height: 2.5
+          min_z: 0.1
+          max_z: 4.0
+          expected_update_rate: 15.0  # Expect stereo at 15Hz
+          clear_after_reading: true
+          filter: "voxel"             # Pre-filter for performance
+          voxel_min_points: 1
+          vertical_fov_angle: 0.98    # RealSense D435 FOV
+          horizontal_fov_angle: 1.51
+          decay_acceleration: 5.0     # Very fast clearing
+          model_type: 0               # Depth camera
+      
+      # === INFLATION LAYER ===
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        cost_scaling_factor: 3.0    # Gentle inflation for blimp
+        inflation_radius: 0.4       # 40cm safety bubble around obstacles
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      # === BASIC SETTINGS ===
+      update_frequency: 2.0       # Slower updates for global planning
+      publish_frequency: 1.0      # 1Hz publishing
+      global_frame: map
+      robot_base_frame: base_link
+      
+      # === LARGER COSTMAP ===
+      width: 50                   # 50m x 50m - adjust based on your space
+      height: 50
+      resolution: 0.2             # Coarser resolution for global planning
+      
+      # === STATIC MAP ===
+      rolling_window: false       # Use full map
+      track_unknown_space: true   # Track unknowns for global planning
+      
+      # === PLUGINS ===
+      plugins: ["static_layer", "stvl_layer", "inflation_layer"]
+      
+      # === STATIC MAP LAYER ===
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        enabled: true
+        subscribe_to_updates: true
+        map_topic: /map
+        
+      # === STVL OBSTACLE LAYER (Global) ===
+      stvl_layer:
+        plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
+        enabled: true
+        
+        # === LONGER DECAY FOR GLOBAL MAP ===
+        voxel_decay: 15.0           # 15 seconds - remember obstacles longer
+        decay_model: 0              # Linear
+        observation_persistence: 0.0
+        
+        # === SPATIAL SETTINGS ===
+        voxel_size: 0.2             # Larger voxels for global efficiency
+        mark_threshold: 0
+        obstacle_range: 6.0         # Longer range for global planning
+        max_obstacle_height: 3.0    # Full height detection
+        
+        # === PERFORMANCE ===
+        track_unknown_space: false  # Let static layer handle unknowns
+        publish_voxel_map: true     # Enable for visualization
+        update_footprint_enabled: true
+        combination_method: 1
+        transform_tolerance: 0.3
+        
+        mapping_mode: false
+        
+        observation_sources: stereo_depth
+        
+        stereo_depth:
+          enabled: true
+          data_type: PointCloud2
+          topic: /camera/depth/color/points
+          marking: true
+          clearing: true
+          min_obstacle_height: 0.2
+          max_obstacle_height: 3.0
+          min_z: 0.1
+          max_z: 6.0
+          expected_update_rate: 10.0
+          clear_after_reading: true
+          filter: "voxel"
+          voxel_min_points: 2         # More points for global accuracy
+          vertical_fov_angle: 0.98
+          horizontal_fov_angle: 1.51
+          decay_acceleration: 2.0     # Slower clearing for global persistence
+          model_type: 0
+      
+      # === INFLATION ===
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        cost_scaling_factor: 2.0
+        inflation_radius: 0.6       # Larger safety margin for global planning

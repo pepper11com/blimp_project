@@ -72,8 +72,8 @@ public:
         });
 
         // Parameters for neighborhood collision checking
-        this->declare_parameter<double>("check_radius", 0.5);
-        this->declare_parameter<double>("check_step", 0.0); // 0.0 => use tree resolution
+        this->declare_parameter<double>("check_radius", 0.2);  // Optimized for performance
+        this->declare_parameter<double>("check_step", 0.1);    // Optimized for performance  
         this->declare_parameter<bool>("check_use_sphere", true);
         // Log initial values
         double r = this->get_parameter("check_radius").as_double();
@@ -138,20 +138,19 @@ private:
             return;
         }
 
-        // Refresh parameters each request so they can be tuned at runtime
-        double check_radius = 0.1;
-        double check_step = 0.0;
-        bool check_use_sphere = true;
-        (void)this->get_parameter("check_radius", check_radius);
-        (void)this->get_parameter("check_step", check_step);
-        (void)this->get_parameter("check_use_sphere", check_use_sphere);
+        // Refresh parameters each request so they can be tuned at runtime  
+        double check_radius, check_step;
+        bool check_use_sphere;
+        check_radius = this->get_parameter("check_radius").as_double();
+        check_step = this->get_parameter("check_step").as_double();
+        check_use_sphere = this->get_parameter("check_use_sphere").as_bool();
         // Default step to current tree resolution if not set or invalid
         const double tree_res = tree_ ? tree_->getResolution() : color_tree_->getResolution();
         if (check_step <= 0.0) check_step = tree_res;
         if (check_step <= 0.0) check_step = 0.1; // ultimate fallback
 
-        // Debug logging only when needed
-        RCLCPP_DEBUG(this->get_logger(),
+        // Temporary INFO logging to debug the issue
+        RCLCPP_INFO(this->get_logger(),
                     "Checking %zu point(s) against %s (res=%.3f, depth=%u, radius=%.3f, step=%.3f, sphere=%s)...",
                     request->points_to_check.size(), 
                     tree_ ? "OcTree" : "ColorOcTree",
@@ -196,7 +195,7 @@ private:
                             const double oz = iz * check_step;
                             if (check_use_sphere && (ox*ox + oy*oy + oz*oz) > r2) continue; // outside sphere
                             if (is_occupied_at(point.x + ox, point.y + oy, point.z + oz)) {
-                                RCLCPP_DEBUG(this->get_logger(),
+                                RCLCPP_INFO(this->get_logger(),
                                             "Collision at (%.3f, %.3f, %.3f) offset (%.3f, %.3f, %.3f)",
                                             point.x, point.y, point.z, ox, oy, oz);
                                 hit = true;
@@ -208,11 +207,13 @@ private:
 
             if (hit) {
                 response->is_occupied = true;
+                RCLCPP_INFO(this->get_logger(), "COLLISION DETECTED - Sending response: is_occupied=true");
                 return;
             }
             ++idx;
         }
-        RCLCPP_DEBUG(this->get_logger(), "No collisions found.");
+        RCLCPP_INFO(this->get_logger(), "No collisions found - Sending response: is_occupied=false");
+        response->is_occupied = false;
     }
 
     void handle_plan_path(const std::shared_ptr<blimp_navigation::srv::PlanPath::Request> request,

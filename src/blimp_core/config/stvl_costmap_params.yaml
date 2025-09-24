@@ -1,0 +1,63 @@
+# Lightweight STVL Configuration for Blimp Navigation
+# Optimized for Raspberry Pi 5 with minimal CPU overhead
+
+rgbd_obstacle_layer:
+  enabled: true
+  plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
+  
+  # === TEMPORAL SETTINGS - Very Short Decay for Performance ===
+  voxel_decay: 3.0              # VERY SHORT: Only 3 seconds! Keep it fresh and light
+  decay_model: 0                # Linear decay (fastest computation)
+  observation_persistence: 0.0  # Use only latest measurements
+  
+  # === SPATIAL SETTINGS - Larger voxels for speed ===
+  voxel_size: 0.15              # BIGGER voxels (15cm) = less compute than 5cm default
+  mark_threshold: 0             # Immediate marking
+  
+  # === PERFORMANCE OPTIMIZATIONS ===
+  track_unknown_space: false    # Disable unknown tracking to save CPU
+  publish_voxel_map: true       # Enable for visualization
+  update_footprint_enabled: true
+  combination_method: 1         # Max method (faster than override)
+  transform_tolerance: 0.3      # Relaxed tolerance for blimp movement
+  
+  # === OBSTACLE DETECTION ===
+  obstacle_range: 4.0           # 4m detection range - good for blimp
+  max_obstacle_height: 2.5      # 2.5m ceiling clearance
+  origin_z: 0.0                 # Ground reference
+  
+  # === DISABLE MAPPING MODE ===
+  mapping_mode: false           # Navigation only, not mapping
+  map_save_duration: 0          # No auto-saving
+  
+  # === SINGLE OBSERVATION SOURCE FOR SIMPLICITY ===
+  observation_sources: rgbd_mark_clear
+  
+  rgbd_mark_clear:
+    enabled: true
+    data_type: PointCloud2
+    topic: /camera/depth/color/points  # Your RealSense point cloud
+    marking: true
+    clearing: true
+    
+    # === HEIGHT FILTERING ===
+    min_obstacle_height: 0.2    # Ignore ground noise
+    max_obstacle_height: 2.5    # Ceiling height
+    min_z: 0.1                  # Ground clearance
+    max_z: 5.0                  # Max range
+    
+    # === TEMPORAL SETTINGS ===
+    expected_update_rate: 10.0  # Expect ~10Hz updates
+    clear_after_reading: true   # Clear buffer immediately
+    
+    # === PERFORMANCE FILTERS ===
+    filter: "voxel"             # Pre-voxelize incoming data
+    voxel_min_points: 1         # Minimal points per voxel
+    
+    # === FOV SETTINGS FOR REALSENSE D435/D455 ===
+    vertical_fov_angle: 0.98    # ~56 degrees vertical FOV
+    horizontal_fov_angle: 1.51  # ~87 degrees horizontal FOV
+    
+    # === FAST CLEARING ===
+    decay_acceleration: 3.0     # Aggressive clearing in FOV (3x faster)
+    model_type: 0               # Depth camera model

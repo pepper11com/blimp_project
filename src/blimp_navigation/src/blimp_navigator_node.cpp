@@ -1,6 +1,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "std_msgs/msg/string.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -8,6 +9,7 @@
 #include "blimp_navigation/srv/plan_path.hpp"
 #include "blimp_navigation/pid.hpp"
 #include "blimp_navigation/blimp_controller.hpp"
+#include "blimp_navigation/obstacle_avoidance.hpp"
 
 #include <cmath>
 #include <memory>
@@ -22,11 +24,11 @@ class BlimpNavigatorNode : public rclcpp::Node
 public:
   BlimpNavigatorNode() : Node("blimp_navigator_node")
   {
-    // --- Master Debug Switch ---
+    // Debug switch
     this->declare_parameter<bool>("debug_mode", true);
     debug_mode_ = this->get_parameter("debug_mode").as_bool();
     
-    // --- Parameters for tuning ---
+    // Parameters for tuning
     this->declare_parameter<double>("altitude_kp", 150.0);
     this->declare_parameter<double>("altitude_ki", 10.0);
     this->declare_parameter<double>("altitude_kd", 20.0);
@@ -37,21 +39,21 @@ public:
     this->declare_parameter<double>("forward_ki", 2.0);
     this->declare_parameter<double>("forward_kd", 5.0);
     
-    // --- TF2 listener ---
+    // TF2 listener
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
-    
-    // --- Hardware controller ---
+
+    // Hardware controller
     try {
       controller_ = std::make_unique<blimp_navigation_cpp::BlimpController>("/dev/ttyAMA0", 115200);
-      RCLCPP_INFO(this->get_logger(), "Successfully connected to the flight controller.");
+      RCLCPP_INFO(this->get_logger(), "Successfully connected to the flight controller");
     } catch (const std::exception& e) {
       RCLCPP_FATAL(this->get_logger(), "Failed to connect to flight controller: %s", e.what());
       rclcpp::shutdown();
       return;
     }
 
-    // --- PID controllers ---
+    // PID controllers
     altitude_pid_ = std::make_unique<blimp_navigation_cpp::PID>(
       this->get_parameter("altitude_kp").as_double(), this->get_parameter("altitude_ki").as_double(), this->get_parameter("altitude_kd").as_double(), 0.0, -500.0, 500.0
     );
@@ -61,9 +63,13 @@ public:
     forward_pid_ = std::make_unique<blimp_navigation_cpp::PID>(
       this->get_parameter("forward_kp").as_double(), this->get_parameter("forward_ki").as_double(), this->get_parameter("forward_kd").as_double(), 0.0, 0.0, 20.0
     );
-    RCLCPP_INFO(this->get_logger(), "PID controllers initialized.");
+    RCLCPP_INFO(this->get_logger(), "PID controllers initialized");
 
-    // --- ROS2 communications ---
+    // Obstacle avoidance system
+    obstacle_avoidance_ = std::make_unique<blimp_navigation_cpp::ObstacleAvoidance>(this);
+    RCLCPP_INFO(this->get_logger(), "Obstacle avoidance system initialized");
+
+    // ROS2 communications
     goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
       "/goal_pose", 10, std::bind(&BlimpNavigatorNode::goal_callback, this, std::placeholders::_1));
     collision_client_ = this->create_client<blimp_navigation::srv::CheckCollision>("/check_collision");
@@ -80,17 +86,17 @@ public:
     if (!collision_client_->wait_for_service(std::chrono::seconds(5))) {
       RCLCPP_WARN(this->get_logger(), "Collision check service not available after 5 seconds!");
     } else {
-      RCLCPP_INFO(this->get_logger(), "Collision check service is ready.");
+      RCLCPP_INFO(this->get_logger(), "Collision check service is ready");
     }
 
     if (debug_mode_) {
       status_pub_ = this->create_publisher<std_msgs::msg::String>("/blimp_status", 10);
       last_debug_time_ = this->get_clock()->now();
     }
-    
-    // --- Main loop ---
+
+    // Main loop
     timer_ = this->create_wall_timer(100ms, std::bind(&BlimpNavigatorNode::navigate_loop, this));
-    RCLCPP_INFO(this->get_logger(), "Blimp C++ Navigator Node has been started.");
+    RCLCPP_INFO(this->get_logger(), "Blimp navigator node started");
   }
 
 private:
@@ -101,6 +107,10 @@ private:
     path_valid_ = false;  // Need to replan
     current_path_.clear();
     current_waypoint_index_ = 0;
+    
+    // Update obstacle avoidance system
+    obstacle_avoidance_->update_goal(goal_pose_);
+    
     RCLCPP_INFO(this->get_logger(), "New goal received: Pos(x=%.2f, y=%.2f, z=%.2f)", 
       goal_pose_.pose.position.x, goal_pose_.pose.position.y, goal_pose_.pose.position.z);
     altitude_pid_->set_setpoint(goal_pose_.pose.position.z);
@@ -119,7 +129,7 @@ private:
 
     auto result_future = path_planning_client_->async_send_request(request);
     
-    // Wait for result with short timeout to avoid blocking
+    // Waiting for result with short timeout to avoid blocking
     if (result_future.wait_for(200ms) == std::future_status::ready) {
       auto response = result_future.get();
       if (response->success) {
@@ -152,7 +162,7 @@ private:
       std::pow(current_waypoint.z - current_pos.z, 2)
     );
 
-    // If we're close to the current waypoint, advance to the next one
+    // If we are close to the current waypoint, advance to the next one
     if (distance_to_waypoint < 0.3) {  // 30cm threshold
       current_waypoint_index_++;
       if (current_waypoint_index_ >= current_path_.size()) {
@@ -180,6 +190,10 @@ private:
       double roll, pitch, yaw;
       m.getRPY(roll, pitch, yaw);
       current_heading_rad_ = yaw;
+      
+      // Update obstacle avoidance system
+      obstacle_avoidance_->update_pose(current_pose_);
+      
       return true;
     } catch (const tf2::TransformException & ex) {
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Could not transform camera_link to map: %s", ex.what());
@@ -187,50 +201,53 @@ private:
     }
   }
   
-  void check_for_obstacles()
+  void perform_collision_check()
   {
       if (!collision_client_->service_is_ready()) {
-          RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, 
+          RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, 
                                "Collision check service not ready!");
-          obstacle_detected_ = false; // Fail safe - assume no obstacle if service unavailable
           return;
       }
       
+      // Get collision points from obstacle avoidance system
+      auto check_points = obstacle_avoidance_->build_safety_envelope();
+      if (check_points.empty()) {
+          RCLCPP_WARN(this->get_logger(), "No collision check points generated!");
+          return;
+      }
+      
+      RCLCPP_INFO(this->get_logger(), "Performing collision check with %zu points", check_points.size());
+      
       auto request = std::make_shared<blimp_navigation::srv::CheckCollision::Request>();
-      
-      // Build points to check in front of the blimp
-      auto pos = current_pose_.pose.position;
-      double forward_x = std::cos(current_heading_rad_);
-      double forward_y = std::sin(current_heading_rad_);
-      
-      for (double step = 0.3; step <= 1.5; step += 0.12) {
-          geometry_msgs::msg::Point p;
-          p.x = pos.x + forward_x * step;
-          p.y = pos.y + forward_y * step;
-          p.z = pos.z;
-          request->points_to_check.push_back(p);
-      }
+      request->points_to_check = check_points;
 
-      auto result_future = collision_client_->async_send_request(request);
-      
-      // Use a longer wait time to avoid false negatives
-      if (result_future.wait_for(500ms) == std::future_status::ready) {
-          auto response = result_future.get();
-          obstacle_detected_ = response->is_occupied;
-          RCLCPP_DEBUG(this->get_logger(), "Collision check result: %s", 
-                      obstacle_detected_ ? "OBSTACLE DETECTED" : "clear");
-      } else {
-          RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, 
-                               "Collision service timeout - using fail-safe (no obstacle)");
-          obstacle_detected_ = false; // Fail safe
-      }
+      // Use async call with callback - no executor conflicts
+      auto result_future = collision_client_->async_send_request(
+          request,
+          [this, check_points](rclcpp::Client<blimp_navigation::srv::CheckCollision>::SharedFuture future) {
+              try {
+                  auto response = future.get();
+                  obstacle_avoidance_->update_collision_result(response->is_occupied);
+                  RCLCPP_INFO(this->get_logger(), "Collision check: %zu points -> %s", 
+                              check_points.size(), response->is_occupied ? "COLLISION" : "clear");
+              } catch (const std::exception& e) {
+                  RCLCPP_ERROR(this->get_logger(), "Collision service callback error: %s - assuming COLLISION", e.what());
+                  obstacle_avoidance_->update_collision_result(true);
+              }
+          });
   }
 
   void navigate_loop()
   {
     if (!get_current_pose_from_tf()) return;
 
-    check_for_obstacles();
+    // Run collision detection very infrequently (every 5 seconds) since blimp is slow
+    static auto last_collision_check = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_collision_check).count() > 5000) {
+        perform_collision_check();
+        last_collision_check = now;
+    }
 
     if (!has_goal_) {
       controller_->set_motor_pct(0, 0.0);
@@ -243,7 +260,7 @@ private:
       double distance_to_goal_2d = std::sqrt(dx*dx + dy*dy);
 
       if (distance_to_goal_2d < 0.5) {
-        RCLCPP_INFO(this->get_logger(), "Goal reached!");
+        RCLCPP_INFO(this->get_logger(), "Goal reached :)");
         has_goal_ = false;
         controller_->set_motor_pct(0, 0.0);
         controller_->set_motor_pct(1, 0.0);
@@ -260,11 +277,17 @@ private:
         double forward_output = forward_pid_->update(-distance_to_goal_2d, std::chrono::steady_clock::now());
         
         if (std::abs(heading_error_rad * 180.0 / M_PI) > 25.0) {
-            forward_output = 0.0;
+            forward_output = 0.0;  // Prioritize turning when heading is way off
         }
-        if (obstacle_detected_) {
-            forward_output = 0.0;
-            turn_output = -40.0;
+        
+        // Obstacle avoidance using new system
+        bool obstacle_detected = obstacle_avoidance_->is_obstacle_detected();
+        if (obstacle_detected) {
+            forward_output = 0.0;  // Stop forward motion
+            double recommended_turn = obstacle_avoidance_->get_recommended_turn_rate();
+            turn_output = recommended_turn;
+            
+            RCLCPP_DEBUG(this->get_logger(), "Obstacle avoidance active: turn=%.1f", recommended_turn);
         }
 
         controller_->set_servo_us(2, 1500 + static_cast<int>(altitude_output));
@@ -276,12 +299,12 @@ private:
         controller_->set_motor_pct(0, left_motor);
         controller_->set_motor_pct(1, right_motor);
 
-        // --- Publish debug info if needed ---
+        // Publish debug info if needed
         if (debug_mode_ && (this->get_clock()->now() - last_debug_time_).seconds() >= 1.5) {
             last_debug_time_ = this->get_clock()->now();
             std::stringstream ss;
             ss << "\n=================== BLIMP STATUS (C++) ==================="
-               << "\n- OBSTACLE AHEAD: " << (obstacle_detected_ ? "TRUE - AVOIDING" : "false")
+               << "\n- OBSTACLE AHEAD: " << (obstacle_detected ? "TRUE - AVOIDING" : "false")
                << "\n----------------------------------------------------"
                << "\n|         |      X     |      Y     |      Z     |"
                << "\n| Current | " << std::fixed << std::setprecision(2) << std::setw(10) << pos.x 
@@ -295,7 +318,8 @@ private:
                << "\n- Control:"
                << "\n  - PID Outputs: Alt=" << std::fixed << std::setprecision(1) << altitude_output << " | Turn=" << turn_output << " | Fwd=" << forward_output
                << "\n  - Motors: L=" << left_motor << "% | R=" << right_motor << "%"
-               << (obstacle_detected_ ? "\n  - ACTION: Stopping forward, turning to avoid obstacle" : "")
+               << (obstacle_detected ? "\n  - ACTION: SMART OBSTACLE AVOIDANCE ACTIVE" : "")
+               << "\n- " << obstacle_avoidance_->get_status_string()
                << "\n====================================================";
             
             std_msgs::msg::String msg;
@@ -320,6 +344,7 @@ private:
 
   std::unique_ptr<blimp_navigation_cpp::BlimpController> controller_;
   std::unique_ptr<blimp_navigation_cpp::PID> altitude_pid_, heading_pid_, forward_pid_;
+  std::unique_ptr<blimp_navigation_cpp::ObstacleAvoidance> obstacle_avoidance_;
 
   geometry_msgs::msg::PoseStamped current_pose_;
   double current_heading_rad_ = 0.0;
@@ -328,7 +353,6 @@ private:
   size_t current_waypoint_index_ = 0;
   bool path_valid_ = false;
   bool has_goal_ = false;
-  bool obstacle_detected_ = false;
   rclcpp::Time last_debug_time_;
 };
 

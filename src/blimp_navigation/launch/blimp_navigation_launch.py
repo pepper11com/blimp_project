@@ -16,10 +16,10 @@ def generate_launch_description():
         DeclareLaunchArgument('heading_kp', default_value='0.8'),
         DeclareLaunchArgument('forward_kp', default_value='20.0'),
         
-        # --- Arguments for octomap collision checking ---
-        DeclareLaunchArgument('check_radius', default_value='0.5',
+        # --- Arguments for octomap collision checking (optimized for small blimp) ---
+        DeclareLaunchArgument('check_radius', default_value='0.15',
             description='Neighborhood radius (m) around each point to check.'),
-        DeclareLaunchArgument('check_step', default_value='0.05',
+        DeclareLaunchArgument('check_step', default_value='0.1',
             description='Sampling step (m); use smaller for denser checks.'),
         DeclareLaunchArgument('check_use_sphere', default_value='true',
             description='If true, sample inside a sphere; else a cube.'),

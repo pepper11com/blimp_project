@@ -52,6 +52,7 @@ add_library(blimp_navigation_lib
   src/pid.cpp
   src/blimp_controller.cpp
   src/path_planner.cpp
+  src/obstacle_avoidance.cpp
 )
 
 include_directories(
@@ -88,12 +89,12 @@ rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_t
 target_link_libraries(octomap_checker_node "${cpp_typesupport_target}")
 
 # Add dependencies for blimp_navigator_node
-ament_target_dependencies(blimp_navigator_node rclcpp geometry_msgs tf2_ros tf2_geometry_msgs std_msgs)
+ament_target_dependencies(blimp_navigator_node rclcpp geometry_msgs tf2_ros tf2_geometry_msgs std_msgs nav_msgs)
 target_link_libraries(blimp_navigator_node blimp_navigation_lib)
 target_link_libraries(blimp_navigator_node "${cpp_typesupport_target}")
 
 # Add dependencies for the library
-ament_target_dependencies(blimp_navigation_lib geometry_msgs)
+ament_target_dependencies(blimp_navigation_lib geometry_msgs nav_msgs tf2_geometry_msgs rclcpp)
 target_include_directories(blimp_navigation_lib PUBLIC ${OCTOMAP_INCLUDE_DIRS})
 target_link_libraries(blimp_navigation_lib ${OCTOMAP_LIBRARIES})
 
