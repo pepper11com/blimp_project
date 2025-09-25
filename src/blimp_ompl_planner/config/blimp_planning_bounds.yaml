@@ -14,7 +14,7 @@ ompl_planner_node:
     bounds_max_z: 3.5       # Room ceiling height
 
     # Robot physical parameters
-    robot_radius: 0.7      # Test with smaller radius first (meters)
+    robot_radius: 0.3      # Test with smaller radius first (meters)
 
     # Planning algorithm parameters
     planning_timeout: 15.0  # Maximum planning time (seconds)

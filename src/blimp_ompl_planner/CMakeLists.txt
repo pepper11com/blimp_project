@@ -79,6 +79,24 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
+# Install RViz config files
+install(DIRECTORY
+  rviz
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+# Install Python scripts as executables
+install(PROGRAMS
+  scripts/send_navigation_goal.py
+  scripts/rviz_goal_handler.py
+  scripts/interactive_3d_goal.py
+  scripts/set_altitude.py
+  scripts/quick_bounds_analyzer.py
+  scripts/path_visualizer.py
+  scripts/test_collision_radius.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)

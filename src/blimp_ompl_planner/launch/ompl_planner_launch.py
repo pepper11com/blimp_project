@@ -6,6 +6,9 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
+
+# ros2 launch blimp_ompl_planner ompl_planner_launch.py
+
 def generate_launch_description():
     # Get path to config file
     config_file = PathJoinSubstitution([
@@ -82,6 +85,17 @@ def generate_launch_description():
         ]
     )
 
+    # Goal Handler - Converts /goal_pose to navigation actions
+    goal_handler = Node(
+        package='blimp_ompl_planner',
+        executable='rviz_goal_handler.py',
+        name='goal_handler',
+        output='screen',
+        parameters=[{
+            'use_sim_time': False
+        }]
+    )
+
     return LaunchDescription([
         robot_radius_arg,
         planning_timeout_arg,
@@ -96,5 +110,6 @@ def generate_launch_description():
         bounds_max_z_arg,
         enable_simplification_arg,
         enable_smoothing_arg,
-        ompl_planner_node
+        ompl_planner_node,
+        goal_handler
     ])

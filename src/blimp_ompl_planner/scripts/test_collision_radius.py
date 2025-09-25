@@ -33,16 +33,16 @@ class CollisionTester(Node):
         current_pos = self.get_current_pose()
         
         if not current_pos:
-            print("❌ Cannot get current position!")
+            print(" Cannot get current position!")
             return
             
         x, y, z = current_pos
         
-        print(f"\n🎯 COLLISION TESTING WITH 7.5m ROBOT RADIUS")
+        print(f"\n COLLISION TESTING WITH 7.5m ROBOT RADIUS")
         print("="*60)
-        print(f"📍 Current position: ({x:.2f}, {y:.2f}, {z:.2f})")
-        print(f"🤖 Robot radius: 7.5m")
-        print(f"🔍 The planner should avoid obstacles within 7.5m of these goals:")
+        print(f" Current position: ({x:.2f}, {y:.2f}, {z:.2f})")
+        print(f" Robot radius: 7.5m")
+        print(f" The planner should avoid obstacles within 7.5m of these goals:")
         
         # Test goals at different distances
         test_goals = [
@@ -56,7 +56,7 @@ class CollisionTester(Node):
         for gx, gy, gz, description in test_goals:
             distance = ((gx-x)**2 + (gy-y)**2 + (gz-z)**2)**0.5
             
-            print(f"\n🎯 Test: {description}")
+            print(f"\n Test: {description}")
             print(f"   Goal: ({gx:.1f}, {gy:.1f}, {gz:.1f})")
             print(f"   Distance: {distance:.1f}m")
             print(f"   Expected: {'REJECT' if distance < 7.5 else 'ACCEPT'}")
@@ -71,7 +71,7 @@ def main():
     
     tester.test_collision_scenarios()
     
-    print(f"\n💡 HOW TO TEST:")
+    print(f"\n HOW TO TEST:")
     print(f"1. Run: ros2 launch blimp_ompl_planner ompl_planner_launch.py")
     print(f"2. Try the test commands above")  
     print(f"3. Goals within 7.5m should be REJECTED")

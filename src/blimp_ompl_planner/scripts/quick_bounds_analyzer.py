@@ -26,7 +26,7 @@ class OctomapAnalyzer(Node):
             resolution = msg.resolution
             data_size = len(msg.data)
             
-            print(f"\n📊 OctoMap Data Found:")
+            print(f"\nOctoMap Data Found:")
             print(f"   Resolution: {resolution:.3f}m per voxel")
             print(f"   Data size: {data_size} bytes")
             
@@ -62,7 +62,7 @@ class OctomapAnalyzer(Node):
                         
                         estimated_size = max_coord - min_coord
                         
-                        print(f"🏠 Estimated room dimensions from OctoMap:")
+                        print(f"   Estimated room dimensions from OctoMap:")
                         print(f"   Coordinate range: {min_coord:.1f} to {max_coord:.1f}")
                         print(f"   Estimated size: ~{estimated_size:.1f} meters")
                         
@@ -72,23 +72,23 @@ class OctomapAnalyzer(Node):
                             
                             suggested_bound = max(estimated_size/2 + padding, 5.0)  # Ensure minimum 5m radius
                             
-                            print(f"\n💡 RECOMMENDED PLANNING BOUNDS:")
+                            print(f"\nRECOMMENDED PLANNING BOUNDS:")
                             print(f"   Based on {estimated_size:.1f}m room with {padding:.1f}m padding")
                             
                             self.print_bounds_config(suggested_bound)
                         else:
-                            print(f"\n⚠️  Room seems small ({estimated_size:.1f}m), using default bounds")
+                            print(f"\nRoom seems small ({estimated_size:.1f}m), using default bounds")
                             self.print_bounds_config(6.0)  # Default 6m radius
                             
                     else:
-                        print("❌ Could not extract coordinates from OctoMap data")
+                        print("Could not extract coordinates from OctoMap data")
                         self.suggest_manual_bounds()
                         
                 except Exception as e:
-                    print(f"❌ Error parsing OctoMap: {e}")
+                    print(f"Error parsing OctoMap: {e}")
                     self.suggest_manual_bounds()
             else:
-                print("❌ OctoMap data too small to analyze")
+                print("OctoMap data too small to analyze")
                 self.suggest_manual_bounds()
                 
         except Exception as e:
@@ -97,7 +97,7 @@ class OctomapAnalyzer(Node):
 
     def print_bounds_config(self, radius):
         """Print the bounds configuration"""
-        print(f"\n🎯 COPY THIS TO blimp_planning_bounds.yaml:")
+        print(f"\nCOPY THIS TO blimp_planning_bounds.yaml:")
         print("-" * 50)
         print(f"bounds_min_x: -{radius:.1f}")
         print(f"bounds_max_x: {radius:.1f}")
@@ -108,7 +108,7 @@ class OctomapAnalyzer(Node):
         print("-" * 50)
         
         total_size = radius * 2
-        print(f"📦 Planning space: {total_size:.1f}m × {total_size:.1f}m × 4.0m")
+        print(f"Planning space: {total_size:.1f}m × {total_size:.1f}m × 4.0m")
         
         # Auto-update the config file
         self.update_config_file(radius)
@@ -144,15 +144,15 @@ class OctomapAnalyzer(Node):
             with open(config_path, 'w') as f:
                 f.writelines(new_lines)
                 
-            print(f"✅ Config file automatically updated!")
+            print(f" Config file automatically updated!")
             print(f"   File: {config_path}")
             
         except Exception as e:
-            print(f"⚠️  Could not auto-update config file: {e}")
+            print(f"    Could not auto-update config file: {e}")
 
     def suggest_manual_bounds(self):
         """Suggest manual bounds for a 9-meter room"""
-        print(f"\n💡 For your 9-meter room, I recommend:")
+        print(f"\nFor a 9-meter room, I recommend:")
         print(f"   Room: 9m × ?m (you mentioned 9m)")
         print(f"   Planning bounds should be ~12-15m total")
         
@@ -166,8 +166,8 @@ def main():
     # Wait for one OctoMap message then exit
     rclpy.spin_once(analyzer, timeout_sec=10.0)
     
-    print(f"\n✅ Analysis complete!")
-    print(f"💡 Restart your OMPL planner to use the new bounds:")
+    print(f"\n Analysis complete!")
+    print(f"   Restart your OMPL planner to use the new bounds:")
     print(f"   ros2 launch blimp_ompl_planner ompl_planner_launch.py")
     
     analyzer.destroy_node()

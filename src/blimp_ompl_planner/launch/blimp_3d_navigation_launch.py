@@ -38,7 +38,8 @@ def generate_launch_description():
             PathJoinSubstitution([
                 blimp_core_share,
                 'launch',
-                'blimp_localization_slam_launch.py'
+                # 'blimp_localization_slam_launch.py'
+                'blimp_localization_launch.py'
             ])
         ]),
         launch_arguments={
@@ -73,13 +74,12 @@ def generate_launch_description():
         ]
     )
 
-    # Path visualization node (optional, for debugging)
-    path_visualizer = Node(
+    # Goal Handler - Converts goal poses to navigation actions
+    goal_handler = Node(
         package='blimp_ompl_planner',
-        executable='ompl_planner_node',  # Could be a separate visualizer node
-        name='path_visualizer',
-        output='log',
-        condition='false',  # Disabled by default
+        executable='rviz_goal_handler.py',
+        name='goal_handler',
+        output='screen',
         parameters=[{
             'use_sim_time': LaunchConfiguration('use_sim_time')
         }]
@@ -90,5 +90,5 @@ def generate_launch_description():
         blimp_radius_arg,
         blimp_localization_launch,
         ompl_planner_node,
-        # path_visualizer
+        goal_handler
     ])
