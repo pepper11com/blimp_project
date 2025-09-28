@@ -33,6 +33,8 @@ include_directories(include)
 # Create the ompl_planner_node executable
 add_executable(ompl_planner_node 
   src/ompl_planner_node.cpp
+  src/octomap_manager.cpp
+  src/path_planner.cpp
   src/octomap_validity_checker.cpp
 )
 

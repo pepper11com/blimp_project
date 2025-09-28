@@ -44,4 +44,7 @@ Thumbs.db
 
 # Temporary files
 *.tmp
-*.temp
+*.tempbuild/
+install/
+log/
+

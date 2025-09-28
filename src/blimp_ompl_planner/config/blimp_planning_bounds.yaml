@@ -6,15 +6,15 @@ ompl_planner_node:
     # Planning workspace bounds (meters)  
     # These define the search space for the planner - should be larger than your actual room
     # Updated for 9+ meter room dimensions
-    bounds_min_x: -6.5     # For 9+ meter room with safety margin
-    bounds_max_x: 6.5      # For 9+ meter room with safety margin  
-    bounds_min_y: -6.5     # For 9+ meter room with safety margin
-    bounds_max_y: 6.5      # For 9+ meter room with safety margin
-    bounds_min_z: -0.5      # Allow slightly below ground
-    bounds_max_z: 3.5       # Room ceiling height
+    bounds_min_x: -16.5     # For 9+ meter room with safety margin
+    bounds_max_x: 16.5      # For 9+ meter room with safety margin  
+    bounds_min_y: -16.5     # For 9+ meter room with safety margin
+    bounds_max_y: 16.5      # For 9+ meter room with safety margin
+    bounds_min_z: -5.0      # Allow slightly below ground
+    bounds_max_z: 5.0       # Room ceiling height
 
     # Robot physical parameters
-    robot_radius: 0.3      # Test with smaller radius first (meters)
+    robot_radius: 0.8      # Realistic blimp size (meters) - forces better paths
 
     # Planning algorithm parameters
     planning_timeout: 15.0  # Maximum planning time (seconds)
@@ -22,8 +22,9 @@ ompl_planner_node:
 
     # Path post-processing
     enable_path_simplification: true   # Enable path shortcutting
-    enable_path_smoothing: true        # Enable B-spline smoothing
-    max_simplification_steps: 150      # Maximum simplification iterations
+    enable_path_smoothing: true        # Enable B-spline smoothing  
+    max_simplification_steps: 50       # Reduced to keep more waypoints
+    min_waypoint_distance: 0.5         # Minimum distance between waypoints (meters)
 
     # Frame configuration
     global_frame: "map"        # Global reference frame

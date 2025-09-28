@@ -49,11 +49,11 @@ def generate_launch_description():
     )
     
     # Planning bounds arguments
-    bounds_min_x_arg = DeclareLaunchArgument('bounds_min_x', default_value='-10.0')
-    bounds_max_x_arg = DeclareLaunchArgument('bounds_max_x', default_value='10.0')
-    bounds_min_y_arg = DeclareLaunchArgument('bounds_min_y', default_value='-10.0')
-    bounds_max_y_arg = DeclareLaunchArgument('bounds_max_y', default_value='10.0')
-    bounds_min_z_arg = DeclareLaunchArgument('bounds_min_z', default_value='-0.5')
+    bounds_min_x_arg = DeclareLaunchArgument('bounds_min_x', default_value='-20.0')
+    bounds_max_x_arg = DeclareLaunchArgument('bounds_max_x', default_value='20.0')
+    bounds_min_y_arg = DeclareLaunchArgument('bounds_min_y', default_value='-20.0')
+    bounds_max_y_arg = DeclareLaunchArgument('bounds_max_y', default_value='20.0')
+    bounds_min_z_arg = DeclareLaunchArgument('bounds_min_z', default_value='-5.0')
     bounds_max_z_arg = DeclareLaunchArgument('bounds_max_z', default_value='5.0')
     
     # Path processing arguments
@@ -80,7 +80,7 @@ def generate_launch_description():
         ],
         remappings=[
             ('octomap', '/octomap_binary'),
-            ('planned_path', '/planned_path'),
+            ('planned_path', '/blimp/planned_path'),
             ('navigate_to_pose', '/navigate_to_pose')
         ]
     )

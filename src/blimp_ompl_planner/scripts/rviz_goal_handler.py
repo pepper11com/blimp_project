@@ -42,7 +42,7 @@ class RVizGoalHandler(Node):
         )
         
         # Current target altitude (persistent)
-        self.target_altitude = 1.5  # Default flying altitude
+        self.target_altitude = 0.5  # Default flying altitude
         
         self.get_logger().info('Goal Handler started!')
         self.get_logger().info(f'Default altitude: {self.target_altitude}m')

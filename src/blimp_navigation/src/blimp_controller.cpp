@@ -2,6 +2,8 @@
 #include <iostream>
 #include <chrono>
 #include <algorithm>
+#include <cmath>
+#include <vector>
 
 namespace blimp_navigation_cpp
 {
@@ -45,8 +47,16 @@ namespace msp
 } // namespace msp
 
 BlimpController::BlimpController(const std::string & device, int baud_rate)
-: serial_port_(io_ctx_), servo_values_(4, 1500), motor_values_(2, 1000), run_thread_(true)
+: serial_port_(io_ctx_),
+  servo_values_{},
+  motor_values_{},
+  target_motor_values_{},
+  run_thread_(true)
 {
+  servo_values_.fill(SERVO_NEUTRAL_US);
+  motor_values_.fill(MOTOR_NEUTRAL_US);
+  target_motor_values_.fill(MOTOR_NEUTRAL_US);
+
   try {
     serial_port_.open(device);
     serial_port_.set_option(asio::serial_port_base::baud_rate(baud_rate));
@@ -64,8 +74,12 @@ BlimpController::~BlimpController()
     sender_thread_.join();
   }
   // Reset motors and servos to safe state
-  std::fill(motor_values_.begin(), motor_values_.end(), 1000);
-  std::fill(servo_values_.begin(), servo_values_.end(), 1500);
+  {
+    std::lock_guard<std::mutex> lock(mtx_);
+    target_motor_values_.fill(MOTOR_NEUTRAL_US);
+    motor_values_.fill(MOTOR_NEUTRAL_US);
+    servo_values_.fill(SERVO_NEUTRAL_US);
+  }
   send_motors();
   send_servos();
   if (serial_port_.is_open()) {
@@ -88,11 +102,45 @@ void BlimpController::set_servo_us(size_t idx, int us)
 
 void BlimpController::set_motor_pct(size_t motor_idx, double pct)
 {
-  pct = std::clamp(pct, 0.0, 100.0);
-  uint16_t us = 1000 + static_cast<uint16_t>(pct * 10.0);
+  const uint16_t us = map_pct_to_pwm(pct);
+
   std::lock_guard<std::mutex> lock(mtx_);
-  if (motor_idx < motor_values_.size()) {
-    motor_values_[motor_idx] = us;
+  if (motor_idx < MOTOR_COUNT) {
+    target_motor_values_[motor_idx] = us;
+  }
+}
+
+uint16_t BlimpController::map_pct_to_pwm(double pct) const
+{
+  const double pct_clamped = std::clamp(pct, -100.0, 100.0);
+  double us = MOTOR_NEUTRAL_US;
+
+  if (pct_clamped > 0.0) {
+    const double span = kForwardMaxUs - kForwardMinUs;
+    us = kForwardMinUs + (pct_clamped / 100.0) * span;
+  } else if (pct_clamped < 0.0) {
+    const double span = kReverseStrongUs - kReverseLightUs;
+    const double magnitude = std::abs(pct_clamped) / 100.0;
+    us = kReverseLightUs + magnitude * span;
+  }
+
+  us = std::clamp(us, kReverseLightUs, kForwardMaxUs);
+  return static_cast<uint16_t>(std::lround(us));
+}
+
+void BlimpController::step_motor_outputs_locked()
+{
+  for (std::size_t i = 0; i < MOTOR_COUNT; ++i) {
+    const int current = static_cast<int>(motor_values_[i]);
+    const int target = static_cast<int>(target_motor_values_[i]);
+
+    if (current == target) {
+      continue;
+    }
+
+    const int diff = target - current;
+    const int step = std::min(std::abs(diff), kMotorRampStepUs);
+    motor_values_[i] = static_cast<uint16_t>(current + (diff > 0 ? step : -step));
   }
 }
 
@@ -127,6 +175,9 @@ void BlimpController::sender_loop()
   while (run_thread_) {
     {
       std::lock_guard<std::mutex> lock(mtx_);
+
+      step_motor_outputs_locked();
+
       try {
         send_servos();
         send_motors();

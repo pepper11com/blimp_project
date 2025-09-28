@@ -64,7 +64,9 @@ python3 src/blimp_ompl_planner/scripts/send_navigation_goal.py 2.0 -3.0 1.5
 
 ### **Topics to Subscribe to:**
 - **OctoMap**: `/octomap_binary` (type: `octomap_msgs/Octomap`)
-- **Planned Path**: `/blimp/planned_path` (type: `nav_msgs/Path`)
+- **Full Path**: `/blimp/planned_path_full` (type: `nav_msgs/Path`) - Complete route
+- **Remaining Path**: `/blimp/planned_path_remaining` (type: `nav_msgs/Path`) - Shrinks as waypoints completed ⭐
+- **Current OMPL Path**: `/blimp/planned_path` (type: `nav_msgs/Path`) - Raw OMPL output
 - **Robot Position**: `/tf` and `/tf_static` (type: `tf2_msgs/TFMessage`)
 - **Point Cloud**: `/rtabmap/cloud_map` (type: `sensor_msgs/PointCloud2`)
 - **Goal Pose**: `/goal_pose` (type: `geometry_msgs/PoseStamped`)
@@ -72,7 +74,8 @@ python3 src/blimp_ompl_planner/scripts/send_navigation_goal.py 2.0 -3.0 1.5
 ### **Recommended Panel Layout:**
 1. **3D Panel**: Main visualization
    - Add OctoMap (set transparency ~0.7)
-   - Add Path visualization (bright green)
+   - Add **Full Path** (blue) - `/blimp/planned_path_full` 
+   - Add **Remaining Path** (green) - `/blimp/planned_path_remaining` ⭐ 
    - Add TF tree (show robot frames)
    - Add Point Cloud (if available)
 
@@ -111,8 +114,12 @@ ros2 topic echo /navigate_to_pose/goal --once
 # Check if planner is running
 ros2 node list | grep planner
 
-# Check goal topic
-ros2 topic info /goal_pose
+# Monitor path topics
+ros2 topic echo /blimp/planned_path_full --once
+ros2 topic echo /blimp/planned_path_remaining --once
+
+# Check path lengths (should shrink over time)
+ros2 topic hz /blimp/planned_path_remaining
 
 # Monitor navigation action
 ros2 action list | grep navigate
