@@ -41,11 +41,11 @@ blimp_navigator_node:
     right_servo_index: 3
 
     lookahead_distance: 1.8
-    waypoint_tolerance: 0.6
+    waypoint_tolerance: 0.9
     goal_tolerance: 0.8
 
     max_speed_command: 0.20
-    cruise_speed_command: 0.10
+    cruise_speed_command: 0.12
     min_speed_command: 0.03
 
     brake_distance: 1.5
