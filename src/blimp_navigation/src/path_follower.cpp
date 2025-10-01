@@ -1,4 +1,5 @@
 #include "blimp_navigation/path_follower.hpp"
+#include "blimp_navigation/blimp_dynamics.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -63,6 +64,9 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
   }
 
   const geometry_msgs::msg::Point &current = pose.pose.position;
+  
+  // Update velocity estimate from position changes
+  updateVelocityEstimate(current, dt);
 
   // Advance waypoints when we are within tolerance
   while (active_index_ < full_path_.poses.size()) {
@@ -107,6 +111,15 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
   const double altitude_error = target_pose.z - current.z;
   double altitude_command = altitude_pid_.update(altitude_error, dt);
   altitude_command = std::clamp(altitude_command, -config_.altitude_limit, config_.altitude_limit);
+  
+  // Apply altitude rate limiting for smoother climb/descent
+  // Limit vertical velocity to max_altitude_rate (e.g., 0.3 m/s)
+  // This prevents servo slamming and respects helium dynamics
+  if (config_.max_altitude_rate > 0.0 && std::abs(altitude_command) > config_.max_altitude_rate) {
+    // Preserve the sign, but limit magnitude
+    const double sign = (altitude_command > 0) ? 1.0 : -1.0;
+    altitude_command = sign * config_.max_altitude_rate;
+  }
 
   // ========== SMART CONTROL MODE ARBITRATION ==========
   // Decide whether to prioritize yaw or altitude based on errors
@@ -191,9 +204,20 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
     forward += altitude_boost;
   }
 
+  // Predictive braking: use actual velocity to determine when to start slowing
+  // This is smarter than fixed brake_distance because it accounts for current speed
   if (config_.brake_distance > 1e-3 && goal_distance < config_.brake_distance) {
+    // Traditional distance-based braking
     const double ratio = std::clamp(goal_distance / config_.brake_distance, 0.0, 1.0);
     forward *= config_.brake_min_scale + (1.0 - config_.brake_min_scale) * ratio;
+  } else if (velocity_initialized_ && forward_speed_ > 0.1) {
+    // Velocity-based predictive braking
+    const double stopping_dist = predictStoppingDistance(forward_speed_);
+    if (goal_distance < stopping_dist * 1.5) { // Start slowing at 1.5x stopping distance
+      const double brake_ratio = goal_distance / (stopping_dist * 1.5);
+      const double velocity_brake_scale = std::max(0.3, brake_ratio); // Min 30% speed
+      forward *= velocity_brake_scale;
+    }
   }
 
   // Only apply cross-track slowdown when NOT in altitude priority mode
@@ -204,15 +228,18 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
     forward *= cross_scale;
   }
 
-  // Only apply yaw slowdown when NOT in altitude priority mode
-  // When climbing/descending, we need full speed for airflow over servos
-  if (abs_heading_error > config_.yaw_slowdown_threshold && servo_blend_current_ < 0.8) {
-    const double excess = abs_heading_error - config_.yaw_slowdown_threshold;
-    const double range = std::max(kPi - config_.yaw_slowdown_threshold, 1e-3);
-    const double normalized = std::clamp(excess / range, 0.0, 1.0);
-    const double yaw_scale = 1.0 - (1.0 - config_.yaw_slowdown_min_scale) * normalized;
-    forward *= yaw_scale;
+  // Physics-based turn slowdown: reduce speed for tight turns to prevent lateral drift
+  // Only apply when NOT in altitude priority mode (need speed for servo airflow when climbing)
+  if (servo_blend_current_ < 0.8) {
+    // Use actual measured velocity if available, otherwise estimate from command
+    const double current_velocity = velocity_initialized_ ? forward_speed_ : (forward * 0.5);
+    const double physics_turn_scale = BlimpDynamics::turnSlowdownFactor(heading_error, current_velocity);
+    forward *= physics_turn_scale;
   }
+  
+  // Obstacle proximity slowdown (placeholder for future OctoMap integration)
+  const double obstacle_scale = getObstacleProximityFactor(current);
+  forward *= obstacle_scale;
 
   forward = std::clamp(forward, 0.0, config_.max_speed_command);
   if (forward > 0.0) {
@@ -298,6 +325,12 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
     state_builder << state_tags[i];
   }
   command.state = state_builder.str();
+  
+  // Populate velocity estimation & predictive control stats for display
+  command.estimated_speed = velocity_initialized_ ? forward_speed_ : 0.0;
+  command.stopping_distance = velocity_initialized_ ? predictStoppingDistance(forward_speed_) : 0.0;
+  command.physics_slowdown = BlimpDynamics::turnSlowdownFactor(heading_error, 
+                                                                velocity_initialized_ ? forward_speed_ : 0.0);
 
   remaining_path.header = full_path_.header;
   const auto offset = static_cast<std::ptrdiff_t>(active_index_);
@@ -392,6 +425,72 @@ double PathFollower::normalizeAngle(double angle) const
     angle += 2.0 * kPi;
   }
   return angle;
+}
+
+void PathFollower::updateVelocityEstimate(const geometry_msgs::msg::Point &current_pos, double dt)
+{
+  if (!velocity_initialized_) {
+    // First call - initialize
+    last_position_ = current_pos;
+    velocity_x_ = 0.0;
+    velocity_y_ = 0.0;
+    velocity_z_ = 0.0;
+    forward_speed_ = 0.0;
+    velocity_initialized_ = true;
+    return;
+  }
+  
+  if (dt < 1e-6) {
+    return; // Avoid division by zero
+  }
+  
+  // Calculate instantaneous velocities
+  const double inst_vx = (current_pos.x - last_position_.x) / dt;
+  const double inst_vy = (current_pos.y - last_position_.y) / dt;
+  const double inst_vz = (current_pos.z - last_position_.z) / dt;
+  
+  // Apply exponential moving average filter to smooth noise
+  const double alpha = config_.velocity_filter_alpha;
+  velocity_x_ = alpha * inst_vx + (1.0 - alpha) * velocity_x_;
+  velocity_y_ = alpha * inst_vy + (1.0 - alpha) * velocity_y_;
+  velocity_z_ = alpha * inst_vz + (1.0 - alpha) * velocity_z_;
+  
+  // Calculate forward speed (magnitude in XY plane)
+  forward_speed_ = std::sqrt(velocity_x_ * velocity_x_ + velocity_y_ * velocity_y_);
+  
+  // Update last position
+  last_position_ = current_pos;
+}
+
+double PathFollower::predictStoppingDistance(double current_speed) const
+{
+  // With T/W ratio of 1.0, we can decelerate at ~0.8 m/s² (accounting for drag)
+  // Using kinematic equation: d = v² / (2a)
+  const double max_deceleration = 0.8; // m/s²
+  if (max_deceleration < 1e-6) {
+    return 0.0;
+  }
+  
+  const double stopping_distance = (current_speed * current_speed) / (2.0 * max_deceleration);
+  
+  // Add reaction time distance
+  const double reaction_distance = current_speed * config_.predictive_brake_time * 0.3;
+  
+  return stopping_distance + reaction_distance;
+}
+
+double PathFollower::getObstacleProximityFactor(const geometry_msgs::msg::Point &current_pos) const
+{
+  // TODO: Query OctoMap for nearest obstacle distance
+  // For now, return 1.0 (no slowdown) as placeholder
+  // This will be integrated with OctoMap in the future
+  
+  // When implemented, this should return:
+  // - 1.0 if distance > obstacle_slowdown_distance
+  // - Linear scale from 1.0 to obstacle_slowdown_min_scale as distance decreases
+  // - obstacle_slowdown_min_scale if very close
+  
+  return 1.0; // No obstacle slowdown yet (needs OctoMap integration)
 }
 
 }  // namespace blimp_navigation

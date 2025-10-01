@@ -70,6 +70,12 @@ blimp_navigator_node:
     altitude_ki: 0.0
     altitude_kd: 0.05
     altitude_integral_limit: 0.2
+    max_altitude_rate: 0.3
+    
+    velocity_filter_alpha: 0.2
+    predictive_brake_time: 2.0
+    obstacle_slowdown_distance: 1.0
+    obstacle_slowdown_min_scale: 0.3
 
     pivot_heading_threshold_deg: 180.0
     pivot_min_turn_command: 0.08

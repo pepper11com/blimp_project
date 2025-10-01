@@ -35,6 +35,11 @@ struct PathFollowerConfig
   double yaw_slowdown_min_scale{0.25};
 
   double altitude_limit{0.7};
+  double max_altitude_rate{0.3};                     // m/s - maximum climb/descent rate
+  double velocity_filter_alpha{0.2};                 // EMA filter for velocity estimation
+  double predictive_brake_time{2.0};                 // seconds - how far ahead to predict
+  double obstacle_slowdown_distance{1.0};            // meters - start slowing when this close
+  double obstacle_slowdown_min_scale{0.3};           // minimum speed near obstacles
 
   double max_forward_norm{0.20};
   double pivot_heading_threshold{1.0471975512};          // 60 deg in radians
@@ -72,6 +77,11 @@ struct ControlCommand
   double altitude_error{0.0};
   double servo_blend_factor{0.0};  // 0=yaw_mode, 1=altitude_mode
   std::string control_priority{"yaw"};  // "yaw", "altitude", "blending"
+  
+  // Velocity estimation & predictive control stats
+  double estimated_speed{0.0};      // m/s - forward velocity
+  double stopping_distance{0.0};    // m - predicted distance to stop
+  double physics_slowdown{1.0};     // 0-1 - turn slowdown factor
 
   bool has_active_path{false};
   bool goal_reached{false};
@@ -116,6 +126,19 @@ private:
   // Control mode state
   double servo_blend_target_{0.0};  // Target blend factor
   double servo_blend_current_{0.0}; // Current blend factor (smoothed)
+  
+  // Velocity estimation state
+  geometry_msgs::msg::Point last_position_{};
+  double velocity_x_{0.0};  // m/s in x direction
+  double velocity_y_{0.0};  // m/s in y direction
+  double velocity_z_{0.0};  // m/s in z direction (vertical)
+  double forward_speed_{0.0}; // m/s along heading
+  bool velocity_initialized_{false};
+  
+  // Helper functions
+  void updateVelocityEstimate(const geometry_msgs::msg::Point &current_pos, double dt);
+  double predictStoppingDistance(double current_speed) const;
+  double getObstacleProximityFactor(const geometry_msgs::msg::Point &current_pos) const;
 };
 
 }  // namespace blimp_navigation

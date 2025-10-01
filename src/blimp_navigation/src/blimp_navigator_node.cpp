@@ -324,6 +324,10 @@ private:
           "│   Lookahead:        %5.2f m                   │\n"
           "│   Altitude:         %+5.2f m  [Want: %s]      │\n"
           "│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   │\n"
+          "│ SMART CONTROL:                                │\n"
+          "│   Velocity:     %4.2f m/s  StopDist: %4.2f m  │\n"
+          "│   Turn Factor:  %3.0f%%  (1.0=full, 0.5=half) │\n"
+          "│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   │\n"
           "│ MOTORS:                                       │\n"
           "│   Left:  %+5.2f  Right: %+5.2f  [Cmd: %s]     │\n"
           "│   Forward:  %+5.2f                            │\n"
@@ -343,6 +347,9 @@ private:
           control_command.lookahead_distance,
           current_pose.pose.position.z,
           wanted_alt,
+          control_command.estimated_speed,
+          control_command.stopping_distance,
+          control_command.physics_slowdown * 100.0,
           control_command.left_motor_norm,
           control_command.right_motor_norm,
           commanded_turn,
