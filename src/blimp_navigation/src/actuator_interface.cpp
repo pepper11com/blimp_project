@@ -119,8 +119,28 @@ void ActuatorInterface::sendCommand(const ActuatorSetpoint &setpoint, double dt)
   double left_servo_cmd = config_.invert_left_servo ? -setpoint.left_servo_norm : setpoint.left_servo_norm;
   double right_servo_cmd = config_.invert_right_servo ? -setpoint.right_servo_norm : setpoint.right_servo_norm;
 
-  const double left_servo = applyServoLimits(left_servo_cmd, left_servo_last, config_.servo_trim_left, dt);
-  const double right_servo = applyServoLimits(right_servo_cmd, right_servo_last, config_.servo_trim_right, dt);
+  double left_servo = applyServoLimits(left_servo_cmd, left_servo_last, config_.servo_trim_left, dt);
+  double right_servo = applyServoLimits(right_servo_cmd, right_servo_last, config_.servo_trim_right, dt);
+
+  // Apply exponential moving average (EMA) filter to smooth servo jitter
+  // Alpha = 0.3 means new value has 30% weight, smoothed has 70% weight
+  // This gives good balance between responsiveness and smoothness
+  const double servo_filter_alpha = 0.3;
+  
+  if (!servo_filter_initialized_) {
+    // Initialize filter with first values
+    left_servo_smoothed_ = left_servo;
+    right_servo_smoothed_ = right_servo;
+    servo_filter_initialized_ = true;
+  } else {
+    // Apply EMA filter: smoothed = alpha * new + (1-alpha) * smoothed
+    left_servo_smoothed_ = servo_filter_alpha * left_servo + (1.0 - servo_filter_alpha) * left_servo_smoothed_;
+    right_servo_smoothed_ = servo_filter_alpha * right_servo + (1.0 - servo_filter_alpha) * right_servo_smoothed_;
+  }
+
+  // Use smoothed values for output
+  left_servo = left_servo_smoothed_;
+  right_servo = right_servo_smoothed_;
 
   servo_pwm_[config_.left_servo_index] = static_cast<uint16_t>(std::lround(left_servo));
   servo_pwm_[config_.right_servo_index] = static_cast<uint16_t>(std::lround(right_servo));
@@ -378,12 +398,13 @@ double ActuatorInterface::applyServoLimits(double desired_norm, double last_us, 
   double target = config_.servo_neutral_us + config_.servo_gain * desired_norm + trim;
   target = std::clamp(target, config_.servo_min_us, config_.servo_max_us);
 
-  const double max_delta = config_.servo_rate_limit * dt;
-  if (max_delta > 0.0) {
-    const double lower = last_us - max_delta;
-    const double upper = last_us + max_delta;
-    target = std::clamp(target, lower, upper);
-  }
+  // Servo rate limiting disabled - let servos move at their natural speed
+  // const double max_delta = config_.servo_rate_limit * dt;
+  // if (max_delta > 0.0) {
+  //   const double lower = last_us - max_delta;
+  //   const double upper = last_us + max_delta;
+  //   target = std::clamp(target, lower, upper);
+  // }
 
   return target;
 }

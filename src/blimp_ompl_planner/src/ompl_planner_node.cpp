@@ -18,6 +18,15 @@ namespace blimp_ompl_planner
   {
     RCLCPP_INFO(this->get_logger(), "Starting OMPL Planner Node");
 
+    // Configure safety margins for floor/ceiling detection
+    double ceiling_margin = this->declare_parameter("safety_margin_from_ceiling", 0.3);
+    double floor_margin = this->declare_parameter("safety_margin_from_floor", 0.3);
+    octomap_manager_.setSafetyMarginFromCeiling(ceiling_margin);
+    octomap_manager_.setSafetyMarginFromFloor(floor_margin);
+
+    RCLCPP_INFO(this->get_logger(), "Safety margins - Ceiling: %.2f m, Floor: %.2f m", 
+                ceiling_margin, floor_margin);
+
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 

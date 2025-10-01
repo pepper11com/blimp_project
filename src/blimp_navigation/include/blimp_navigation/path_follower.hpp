@@ -45,7 +45,7 @@ struct PathFollowerConfig
   // Control mode arbitration (yaw vs altitude priority)
   double yaw_priority_threshold{0.349};                  // 20 deg - prioritize yaw above this
   double altitude_priority_threshold{0.5};               // 0.5m - prioritize altitude above this  
-  double servo_blend_time{3.0};                          // seconds to transition between modes (slower for inertia)
+  double servo_blend_time{0.3};                          // seconds to transition between modes (fast response)
   double yaw_good_threshold{0.0873};                     // 5 deg - heading is "good enough"
   double altitude_good_threshold{0.2};                   // 0.2m - altitude is "good enough"
 

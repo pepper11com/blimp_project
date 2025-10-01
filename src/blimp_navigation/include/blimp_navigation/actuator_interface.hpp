@@ -116,6 +116,11 @@ private:
   std::vector<uint16_t> servo_pwm_;
   std::vector<MotorState> motor_state_;
 
+  // Servo smoothing state (EMA filter)
+  double left_servo_smoothed_{1500.0};
+  double right_servo_smoothed_{1500.0};
+  bool servo_filter_initialized_{false};
+
   bool actuators_enabled_{false};
   int serial_fd_{-1};
 

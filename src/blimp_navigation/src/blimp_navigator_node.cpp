@@ -19,6 +19,8 @@
 #include "blimp_navigation/actuator_interface.hpp"
 #include "blimp_navigation/path_follower.hpp"
 
+// ros2 run blimp_navigation blimp_navigator_node   --ros-args   --params-file ~/blimp_ws/src/blimp_navigation/param/blimp_navigator.yaml   -p enable_actuators:=true   -p serial_device:=/dev/ttyAMA0
+// ros2 launch blimp_ompl_planner ompl_planner_launch.py
 namespace blimp_navigation
 {
 

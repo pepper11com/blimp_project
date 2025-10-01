@@ -19,7 +19,7 @@ blimp_navigator_node:
     max_forward_magnitude: 0.20
     max_reverse_magnitude: 0.20
     motor_rate_limit: 0.25
-    servo_rate_limit: 120.0
+    servo_rate_limit: 600.0
 
     forward_activation_pwm: 1550.0
     forward_max_pwm: 1650.0
@@ -44,7 +44,7 @@ blimp_navigator_node:
     waypoint_tolerance: 0.6
     goal_tolerance: 0.8
 
-    max_speed_command: 0.12
+    max_speed_command: 0.20
     cruise_speed_command: 0.10
     min_speed_command: 0.03
 
@@ -68,7 +68,7 @@ blimp_navigator_node:
 
     altitude_kp: 0.8
     altitude_ki: 0.0
-    altitude_kd: 0.15
+    altitude_kd: 0.05
     altitude_integral_limit: 0.2
 
     pivot_heading_threshold_deg: 180.0

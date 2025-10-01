@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <tuple>
 #include <utility>
 
 #include <octomap/ColorOcTree.h>
@@ -15,6 +16,8 @@ namespace blimp_ompl_planner
       : initial_bounds_(initial_bounds),
         current_bounds_(initial_bounds),
         robot_radius_(robot_radius),
+        safety_margin_from_ceiling_(0.3),
+        safety_margin_from_floor_(0.3),
         mutex_(std::make_shared<std::mutex>())
   {
   }
@@ -61,18 +64,38 @@ namespace blimp_ompl_planner
       return false;
     }
 
+    double min_occupied_z = 0.0;
+    double max_occupied_z = 0.0;
+    bool floor_constrained = false;
+    bool ceiling_constrained = false;
     {
       std::lock_guard<std::mutex> lock(*mutex_);
       octree_ = std::move(new_tree);
       if (octree_)
       {
-        updateBoundsLocked(*octree_);
+        auto result = updateBoundsLocked(*octree_);
+        min_occupied_z = std::get<0>(result);
+        max_occupied_z = std::get<1>(result);
+        floor_constrained = std::get<2>(result);
+        ceiling_constrained = std::get<3>(result);
       }
     }
 
     if (octree_)
     {
       RCLCPP_INFO(logger, "Updated OctoMap with %zu leaf nodes", octree_->getNumLeafNodes());
+      if (ceiling_constrained)
+      {
+        RCLCPP_INFO(logger,
+                    "Ceiling constraint active: highest obstacle at %.2fm, limiting planning to %.2fm",
+                    max_occupied_z, current_bounds_.max_z);
+      }
+      if (floor_constrained)
+      {
+        RCLCPP_INFO(logger,
+                    "Floor constraint active: lowest obstacle at %.2fm, limiting planning to %.2fm",
+                    min_occupied_z, current_bounds_.min_z);
+      }
       return true;
     }
 
@@ -110,6 +133,12 @@ namespace blimp_ompl_planner
   void OctomapManager::setRobotRadius(double robot_radius)
   {
     robot_radius_ = robot_radius;
+    // Note: bounds will be updated on next map update
+  }
+
+  void OctomapManager::setSafetyMarginFromCeiling(double margin)
+  {
+    safety_margin_from_ceiling_ = margin;
     if (octree_)
     {
       std::lock_guard<std::mutex> lock(*mutex_);
@@ -117,7 +146,17 @@ namespace blimp_ompl_planner
     }
   }
 
-  void OctomapManager::updateBoundsLocked(const octomap::OcTree &tree)
+  void OctomapManager::setSafetyMarginFromFloor(double margin)
+  {
+    safety_margin_from_floor_ = margin;
+    if (octree_)
+    {
+      std::lock_guard<std::mutex> lock(*mutex_);
+      updateBoundsLocked(*octree_);
+    }
+  }
+
+  std::tuple<double, double, bool, bool> OctomapManager::updateBoundsLocked(const octomap::OcTree &tree)
   {
     double map_min_x;
     double map_min_y;
@@ -135,8 +174,46 @@ namespace blimp_ompl_planner
     current_bounds_.max_x = std::min(initial_bounds_.max_x, map_max_x + padding);
     current_bounds_.min_y = std::max(initial_bounds_.min_y, map_min_y - padding);
     current_bounds_.max_y = std::min(initial_bounds_.max_y, map_max_y + padding);
-    current_bounds_.min_z = std::max(initial_bounds_.min_z, map_min_z - padding);
-    current_bounds_.max_z = std::min(initial_bounds_.max_z, map_max_z + padding);
+
+    // Compute the min/max Z coordinates of occupied voxels
+    // This prevents the planner from hitting unmapped floor/ceiling (e.g., black surfaces)
+    double min_occupied_z = map_max_z; // Start with maximum as fallback
+    double max_occupied_z = map_min_z; // Start with minimum as fallback
+    bool found_occupied = false;
+
+    for (auto it = tree.begin_leafs(); it != tree.end_leafs(); ++it)
+    {
+      if (tree.isNodeOccupied(*it))
+      {
+        double z = it.getZ();
+        if (!found_occupied)
+        {
+          min_occupied_z = z;
+          max_occupied_z = z;
+          found_occupied = true;
+        }
+        else
+        {
+          min_occupied_z = std::min(min_occupied_z, z);
+          max_occupied_z = std::max(max_occupied_z, z);
+        }
+      }
+    }
+
+    // Apply floor constraint: can't go below lowest obstacle + safety margin
+    double floor_constraint = min_occupied_z + safety_margin_from_floor_;
+    double unconstrained_min_z = std::max(initial_bounds_.min_z, map_min_z - padding);
+    current_bounds_.min_z = std::max(unconstrained_min_z, floor_constraint);
+
+    // Apply ceiling constraint: can't go above highest obstacle - safety margin
+    double ceiling_constraint = max_occupied_z - safety_margin_from_ceiling_;
+    double unconstrained_max_z = std::min(initial_bounds_.max_z, map_max_z + padding);
+    current_bounds_.max_z = std::min(unconstrained_max_z, ceiling_constraint);
+
+    // Return min_z, max_z, floor_constrained, ceiling_constrained
+    bool floor_constrained = found_occupied && (current_bounds_.min_z > unconstrained_min_z + 0.01);
+    bool ceiling_constrained = found_occupied && (current_bounds_.max_z < unconstrained_max_z - 0.01);
+    return std::make_tuple(min_occupied_z, max_occupied_z, floor_constrained, ceiling_constrained);
   }
 
 } // namespace blimp_ompl_planner

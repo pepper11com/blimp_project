@@ -14,7 +14,13 @@ ompl_planner_node:
     bounds_max_z: 5.0       # Room ceiling height
 
     # Robot physical parameters
-    robot_radius: 0.8      # Realistic blimp size (meters) - forces better paths
+    robot_radius: 0.27      # Realistic blimp size (meters) - forces better paths
+
+    # Safety parameters
+    safety_margin_from_ceiling: 0.4  # Distance (meters) to stay below highest obstacle
+                                     # Prevents hitting unmapped ceilings (e.g., black surfaces)
+    safety_margin_from_floor: 0.3    # Distance (meters) to stay above lowest obstacle
+                                     # Prevents hitting unmapped floors (e.g., black surfaces)
 
     # Planning algorithm parameters
     planning_timeout: 15.0  # Maximum planning time (seconds)

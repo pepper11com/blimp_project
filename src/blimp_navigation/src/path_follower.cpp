@@ -132,8 +132,8 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
     servo_blend_target_ = 1.0;  // Full altitude mode (servos active)
     priority_mode = "altitude";
   } else if (yaw_critical && altitude_critical) {
-    // Both critical: prioritize yaw, but allow some altitude
-    servo_blend_target_ = 0.2;  // Mostly yaw, some altitude
+    // Both critical: prioritize yaw fully (must point right direction first)
+    servo_blend_target_ = 0.0;  // Full yaw mode - get heading right first
     priority_mode = "yaw_priority";
   } else if (yaw_good && altitude_good) {
     // Both good: maintain altitude with gentle adjustments
@@ -181,19 +181,32 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
 
   double forward = config_.cruise_speed_command;
 
+  // Proportional altitude boost: more power when far from target altitude, less when close
+  // This gives aggressive climb/descent when needed, but gentle approach to avoid overshoot
+  if (abs_altitude_error > 0.1) {  // Only boost if error is significant
+    // Scale boost from 0 at 0.1m error up to max at 1.0m+ error
+    const double error_normalized = std::min(1.0, (abs_altitude_error - 0.1) / 0.9);  // 0.1-1.0m → 0-1
+    const double max_altitude_boost = 0.20;  // Maximum boost when far away (increased from 0.10)
+    const double altitude_boost = max_altitude_boost * error_normalized * error_normalized;  // Quadratic for smooth ramp
+    forward += altitude_boost;
+  }
+
   if (config_.brake_distance > 1e-3 && goal_distance < config_.brake_distance) {
     const double ratio = std::clamp(goal_distance / config_.brake_distance, 0.0, 1.0);
     forward *= config_.brake_min_scale + (1.0 - config_.brake_min_scale) * ratio;
   }
 
-  if (config_.cross_track_limit > 1e-3) {
+  // Only apply cross-track slowdown when NOT in altitude priority mode
+  if (config_.cross_track_limit > 1e-3 && servo_blend_current_ < 0.8) {
     const double cross_abs = std::min(std::abs(cross_track_error), config_.cross_track_limit);
     double cross_scale = 1.0 - config_.cross_track_slowdown_gain * (cross_abs / config_.cross_track_limit);
     cross_scale = std::clamp(cross_scale, config_.cross_track_slowdown_min_scale, 1.0);
     forward *= cross_scale;
   }
 
-  if (abs_heading_error > config_.yaw_slowdown_threshold) {
+  // Only apply yaw slowdown when NOT in altitude priority mode
+  // When climbing/descending, we need full speed for airflow over servos
+  if (abs_heading_error > config_.yaw_slowdown_threshold && servo_blend_current_ < 0.8) {
     const double excess = abs_heading_error - config_.yaw_slowdown_threshold;
     const double range = std::max(kPi - config_.yaw_slowdown_threshold, 1e-3);
     const double normalized = std::clamp(excess / range, 0.0, 1.0);
@@ -228,8 +241,9 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
     left_motor = forward;
     right_motor = forward;
 
-    // Scale yaw authority based on servo deflection (less effective when pitched)
-    const double yaw_effectiveness = 1.0 - 0.7 * servo_blend_current_;  // 30% effective when fully pitched
+    // Scale yaw authority based on servo deflection
+    // Quadratic falloff: 100% effective at blend=0, 0% at blend=1 (prevents roll in altitude mode)
+    const double yaw_effectiveness = (1.0 - servo_blend_current_) * (1.0 - servo_blend_current_);
     const double scaled_yaw = yaw_correction * yaw_effectiveness;
     
     if (single_motor_mode) {
@@ -259,11 +273,18 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
   left_motor = std::clamp(left_motor, -config_.max_reverse_norm, config_.max_forward_norm);
   right_motor = std::clamp(right_motor, -config_.max_reverse_norm, config_.max_forward_norm);
 
+  // Apply deadband to servo command to reduce jitter from small PID oscillations
+  double filtered_servo = servo_norm;
+  const double servo_deadband = 0.05;  // 5% deadband (50µs with 1000µs gain)
+  if (std::abs(servo_norm) < servo_deadband) {
+    filtered_servo = 0.0;  // Snap to neutral for tiny movements
+  }
+
   command.forward_command = forward;
   command.left_motor_norm = left_motor;
   command.right_motor_norm = right_motor;
-  command.left_servo_norm = servo_norm;
-  command.right_servo_norm = servo_norm;
+  command.left_servo_norm = filtered_servo;
+  command.right_servo_norm = filtered_servo;
 
   if (state_tags.empty()) {
     state_tags.push_back("cruise");

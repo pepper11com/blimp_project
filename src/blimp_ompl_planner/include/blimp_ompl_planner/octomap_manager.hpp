@@ -34,12 +34,19 @@ namespace blimp_ompl_planner
 
     void setRobotRadius(double robot_radius);
 
+    void setSafetyMarginFromCeiling(double margin);
+
+    void setSafetyMarginFromFloor(double margin);
+
   private:
-    void updateBoundsLocked(const octomap::OcTree &tree);
+    // Returns tuple of (min_occupied_z, max_occupied_z, floor_constrained, ceiling_constrained)
+    std::tuple<double, double, bool, bool> updateBoundsLocked(const octomap::OcTree &tree);
 
     PlanningBounds initial_bounds_;
     PlanningBounds current_bounds_;
     double robot_radius_;
+    double safety_margin_from_ceiling_;
+    double safety_margin_from_floor_;
 
     std::shared_ptr<octomap::OcTree> octree_;
     std::shared_ptr<std::mutex> mutex_;
