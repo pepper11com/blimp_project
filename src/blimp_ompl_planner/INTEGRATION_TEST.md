@@ -19,8 +19,17 @@ ros2 launch blimp_ompl_planner ompl_planner_launch.py
 **Terminal 3: Blimp Controller**
 ```bash
 cd ~/blimp_ws && source install/setup.bash
-ros2 run blimp_navigation blimp_navigator_node
+# Enable MSP hardware output; adjust serial_device if needed
+ros2 run blimp_navigation blimp_navigator_node \
+   --ros-args \
+      --params-file ~/blimp_ws/src/blimp_navigation/param/blimp_navigator.yaml \
+      -p enable_actuators:=true \
+      -p serial_device:=/dev/ttyAMA0
 ```
+
+> ⚠️ Actuators stay idle unless `enable_actuators` is set to `true`. Leave it `false` when bench-testing without the flight controller connected. The default parameter file caps thrust at ±20% and the console prints a “Navigator Status” block each second so you can verify the applied vs. requested commands.
+
+> 🔁 On startup the navigator briefly drives each motor forward and reverse (default ~4 s each) and sweeps both servos. Keep the props clear and use the sequence to confirm wiring. To skip it, pass `-p actuator_startup_check:=false` or adjust the `actuator_check_*` parameters.
 
 **Terminal 4: Navigation Commands**
 ```bash

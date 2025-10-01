@@ -1,0 +1,81 @@
+blimp_navigator_node:
+  ros__parameters:
+    use_sim_time: false
+
+    path_topic: "/blimp/planned_path"
+    full_path_topic: "/blimp/navigator/full_path"
+    remaining_path_topic: "/blimp/navigator/remaining_path"
+    debug_topic: "/blimp/navigator/actuator_debug"
+
+    global_frame: "map"
+    robot_frame: "camera_link"
+    control_rate_hz: 25.0
+
+    enable_actuators: false
+    serial_device: "/dev/ttyAMA0"
+    serial_baud: 115200
+
+    motor_deadband: 0.02
+    max_forward_magnitude: 0.20
+    max_reverse_magnitude: 0.20
+    motor_rate_limit: 0.25
+    servo_rate_limit: 120.0
+
+    forward_activation_pwm: 1550.0
+    forward_max_pwm: 1650.0
+    reverse_activation_pwm: 1375.0
+  # Keep reverse thrust capped for noise/ESC limits; 1250µs ≈ 20% reverse power
+    reverse_min_pwm: 1250.0
+    reverse_release_hold_time: 0.12
+    reverse_release_neutral_time: 0.05
+
+    servo_neutral_us: 1500.0
+    servo_min_us: 500.0
+    servo_max_us: 2500.0
+    servo_gain: 400.0
+    servo_trim_left: 0.0
+    servo_trim_right: 0.0
+    invert_left_servo: true
+    invert_right_servo: false
+    left_servo_index: 2
+    right_servo_index: 3
+
+    lookahead_distance: 1.8
+    waypoint_tolerance: 0.6
+    goal_tolerance: 0.8
+
+    max_speed_command: 0.12
+    cruise_speed_command: 0.10
+    min_speed_command: 0.03
+
+    brake_distance: 1.5
+    brake_min_scale: 0.05
+
+    yaw_limit: 0.12
+    yaw_cross_track_gain: 0.2
+    cross_track_limit: 0.4
+    cross_track_slowdown_gain: 1.5
+    cross_track_slowdown_min_scale: 0.35
+    yaw_slowdown_threshold: 0.2
+    yaw_slowdown_min_scale: 0.25
+
+    altitude_limit: 0.7
+
+    yaw_kp: 0.8
+    yaw_ki: 0.0
+    yaw_kd: 0.1
+    yaw_integral_limit: 0.1
+
+    altitude_kp: 0.8
+    altitude_ki: 0.0
+    altitude_kd: 0.15
+    altitude_integral_limit: 0.2
+
+    pivot_heading_threshold_deg: 180.0
+    pivot_min_turn_command: 0.08
+    single_motor_threshold_deg: 30.0
+
+    actuator_startup_check: false
+    startup_motor_duration: 3.0
+    startup_servo_hold_duration: 1.0
+    startup_neutral_duration: 1.0

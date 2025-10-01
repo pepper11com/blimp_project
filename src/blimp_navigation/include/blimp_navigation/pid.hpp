@@ -1,27 +1,38 @@
-#ifndef BLIMP_NAVIGATION_CPP__PID_HPP_
-#define BLIMP_NAVIGATION_CPP__PID_HPP_
+#ifndef BLIMP_NAVIGATION__PID_HPP_
+#define BLIMP_NAVIGATION__PID_HPP_
 
-#include <chrono>
+#include <algorithm>
 
-namespace blimp_navigation_cpp
+namespace blimp_navigation
 {
 
 class PID
 {
 public:
-  PID(double kp, double ki, double kd, double setpoint, double out_min, double out_max);
-  double update(double current_value, const std::chrono::steady_clock::time_point & current_time);
-  void set_setpoint(double new_setpoint);
+  struct Gains
+  {
+    double kp{0.0};
+    double ki{0.0};
+    double kd{0.0};
+    double integral_limit{0.0};
+  };
+
+  PID() = default;
+  explicit PID(const Gains &gains);
+
+  void setGains(const Gains &gains);
+
+  void reset();
+
+  double update(double error, double dt);
 
 private:
-  double kp_, ki_, kd_;
-  double setpoint_;
-  double out_min_, out_max_;
-  std::chrono::steady_clock::time_point last_time_;
-  double last_error_;
-  double integral_term_;
+  Gains gains_{};
+  double integral_{0.0};
+  double previous_error_{0.0};
+  bool has_previous_{false};
 };
 
-}  // namespace blimp_navigation_cpp
+}  // namespace blimp_navigation
 
-#endif  // BLIMP_NAVIGATION_CPP__PID_HPP_
+#endif  // BLIMP_NAVIGATION__PID_HPP_

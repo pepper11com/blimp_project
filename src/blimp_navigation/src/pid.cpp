@@ -1,53 +1,48 @@
 #include "blimp_navigation/pid.hpp"
-#include <algorithm>
 
-namespace blimp_navigation_cpp
+#include <cmath>
+
+namespace blimp_navigation
 {
 
-PID::PID(double kp, double ki, double kd, double setpoint, double out_min, double out_max)
-: kp_(kp), ki_(ki), kd_(kd), setpoint_(setpoint), out_min_(out_min), out_max_(out_max),
-  last_time_(std::chrono::steady_clock::now()), last_error_(0.0), integral_term_(0.0)
+PID::PID(const Gains &gains)
 {
+  setGains(gains);
 }
 
-void PID::set_setpoint(double new_setpoint)
+void PID::setGains(const Gains &gains)
 {
-  setpoint_ = new_setpoint;
-  integral_term_ = 0.0;
-  last_error_ = 0.0;
-  last_time_ = std::chrono::steady_clock::now();
+  gains_ = gains;
+  reset();
 }
 
-double PID::update(double current_value, const std::chrono::steady_clock::time_point & current_time)
+void PID::reset()
 {
-  auto delta_time_ns = current_time - last_time_;
-  double delta_time_s = std::chrono::duration_cast<std::chrono::nanoseconds>(delta_time_ns).count() / 1e9;
-  
-  if (delta_time_s <= 0) {
-    delta_time_s = 0.001; // Prevent division by zero
+  integral_ = 0.0;
+  previous_error_ = 0.0;
+  has_previous_ = false;
+}
+
+double PID::update(double error, double dt)
+{
+  if (dt <= 0.0) {
+    return gains_.kp * error;
   }
 
-  double error = setpoint_ - current_value;
-  
-  // Proportional term
-  double p_term = kp_ * error;
+  integral_ += error * dt;
+  if (gains_.integral_limit > 0.0) {
+    integral_ = std::clamp(integral_, -gains_.integral_limit, gains_.integral_limit);
+  }
 
-  // Integral term (with clamping)
-  integral_term_ += error * delta_time_s;
-  integral_term_ = std::clamp(integral_term_, out_min_, out_max_);
-  double i_term = ki_ * integral_term_;
+  double derivative = 0.0;
+  if (has_previous_) {
+    derivative = (error - previous_error_) / dt;
+  }
 
-  // Derivative term
-  double delta_error = error - last_error_;
-  double d_term = kd_ * (delta_error / delta_time_s);
+  previous_error_ = error;
+  has_previous_ = true;
 
-  // Combine terms and clamp output
-  double output = std::clamp(p_term + i_term + d_term, out_min_, out_max_);
-
-  last_error_ = error;
-  last_time_ = current_time;
-
-  return output;
+  return gains_.kp * error + gains_.ki * integral_ + gains_.kd * derivative;
 }
 
-}  // namespace blimp_navigation_cpp
+}  // namespace blimp_navigation

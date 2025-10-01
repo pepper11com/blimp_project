@@ -25,7 +25,8 @@ namespace blimp_ompl_planner
         "octomap", 10,
         std::bind(&OmplPlannerNode::octomapCallback, this, std::placeholders::_1));
 
-    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("planned_path", 10);
+    auto path_qos = rclcpp::QoS(rclcpp::KeepLast(10)).transient_local();
+    path_pub_ = this->create_publisher<nav_msgs::msg::Path>("planned_path", path_qos);
 
     action_server_ = rclcpp_action::create_server<NavigateToPose>(
         this,
@@ -34,9 +35,10 @@ namespace blimp_ompl_planner
         std::bind(&OmplPlannerNode::handleCancel, this, std::placeholders::_1),
         std::bind(&OmplPlannerNode::executePlan, this, std::placeholders::_1));
 
-    path_republish_timer_ = this->create_wall_timer(
-        std::chrono::seconds(10),
-        std::bind(&OmplPlannerNode::republishLastPath, this));
+    // Disabled path republish timer - navigator handles path following
+    // path_republish_timer_ = this->create_wall_timer(
+    //     std::chrono::seconds(10),
+    //     std::bind(&OmplPlannerNode::republishLastPath, this));
 
     RCLCPP_INFO(this->get_logger(), "OMPL Planner Node initialized successfully");
   }
