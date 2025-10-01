@@ -310,6 +310,7 @@ private:
           "\n"
           "┌─────────────── BLIMP NAVIGATOR ───────────────┐\n"
           "│ Mode: %-38s          │\n"
+          "│ Priority: %-13s  Blend: %3.0f%% ALT         │\n"
           "│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   │\n"
           "│ HEADING:                                      │\n"
           "│   Current:  %6.1f°  →  Target: %6.1f°         │\n"
@@ -329,6 +330,8 @@ private:
           "│   Left: %4.0f µs  Right: %4.0f µs  [Cmd: %s]  │\n"
           "└───────────────────────────────────────────────┘",
           control_command.state.c_str(),
+          control_command.control_priority.c_str(),
+          control_command.servo_blend_factor * 100.0,
           radToDeg(control_command.current_heading),
           radToDeg(control_command.desired_heading),
           heading_err,

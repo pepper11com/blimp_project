@@ -107,7 +107,62 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
   const double altitude_error = target_pose.z - current.z;
   double altitude_command = altitude_pid_.update(altitude_error, dt);
   altitude_command = std::clamp(altitude_command, -config_.altitude_limit, config_.altitude_limit);
-  const double servo_norm = std::clamp(altitude_command / std::max(config_.altitude_limit, 1e-3), -1.0, 1.0);
+
+  // ========== SMART CONTROL MODE ARBITRATION ==========
+  // Decide whether to prioritize yaw or altitude based on errors
+  const double abs_altitude_error = std::abs(altitude_error);
+  
+  // Determine priority based on which error is more critical
+  bool yaw_critical = abs_heading_error > config_.yaw_priority_threshold;
+  bool altitude_critical = abs_altitude_error > config_.altitude_priority_threshold;
+  bool yaw_good = abs_heading_error < config_.yaw_good_threshold;
+  bool altitude_good = abs_altitude_error < config_.altitude_good_threshold;
+  
+  // Priority logic:
+  // 1. If yaw is critical AND altitude is good → full yaw mode (servos neutral)
+  // 2. If altitude is critical AND yaw is good → full altitude mode (servos deflected)
+  // 3. If both critical → prioritize yaw first (get pointed right, then worry about altitude)
+  // 4. If both good → slight bias toward altitude to maintain height
+  
+  std::string priority_mode = "blending";
+  if (yaw_critical && !altitude_critical) {
+    servo_blend_target_ = 0.0;  // Full yaw mode (servos neutral)
+    priority_mode = "yaw";
+  } else if (altitude_critical && !yaw_critical) {
+    servo_blend_target_ = 1.0;  // Full altitude mode (servos active)
+    priority_mode = "altitude";
+  } else if (yaw_critical && altitude_critical) {
+    // Both critical: prioritize yaw, but allow some altitude
+    servo_blend_target_ = 0.2;  // Mostly yaw, some altitude
+    priority_mode = "yaw_priority";
+  } else if (yaw_good && altitude_good) {
+    // Both good: maintain altitude with gentle adjustments
+    servo_blend_target_ = 0.7;  // Favor altitude maintenance
+    priority_mode = "maintain";
+  } else {
+    // One is borderline: blend based on relative errors
+    const double yaw_ratio = abs_heading_error / std::max(config_.yaw_priority_threshold, 1e-3);
+    const double alt_ratio = abs_altitude_error / std::max(config_.altitude_priority_threshold, 1e-3);
+    const double total = yaw_ratio + alt_ratio;
+    if (total > 1e-3) {
+      servo_blend_target_ = alt_ratio / total;  // Weight toward larger error
+    } else {
+      servo_blend_target_ = 0.5;
+    }
+    priority_mode = "blending";
+  }
+  
+  // Smooth transition using inertia (slow blend to avoid oscillation)
+  const double blend_rate = 1.0 / config_.servo_blend_time;  // fraction per second
+  const double max_blend_change = blend_rate * dt;
+  const double blend_delta = servo_blend_target_ - servo_blend_current_;
+  const double blend_step = std::clamp(blend_delta, -max_blend_change, max_blend_change);
+  servo_blend_current_ += blend_step;
+  servo_blend_current_ = std::clamp(servo_blend_current_, 0.0, 1.0);
+  
+  // Apply blending: 0.0 = neutral (yaw mode), 1.0 = full deflection (altitude mode)
+  const double servo_norm = servo_blend_current_ * 
+                           std::clamp(altitude_command / std::max(config_.altitude_limit, 1e-3), -1.0, 1.0);
 
   const double lookahead_distance = distance(current, target_pose);
   command.lookahead_distance = lookahead_distance;
@@ -118,6 +173,8 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
   command.heading_error = heading_error;
   command.cross_track_error = cross_track_error;
   command.altitude_error = altitude_error;
+  command.servo_blend_factor = servo_blend_current_;
+  command.control_priority = priority_mode;
 
   bool pivot_mode = abs_heading_error >= config_.pivot_heading_threshold;
   bool single_motor_mode = abs_heading_error <= config_.single_motor_threshold;
@@ -171,16 +228,20 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
     left_motor = forward;
     right_motor = forward;
 
+    // Scale yaw authority based on servo deflection (less effective when pitched)
+    const double yaw_effectiveness = 1.0 - 0.7 * servo_blend_current_;  // 30% effective when fully pitched
+    const double scaled_yaw = yaw_correction * yaw_effectiveness;
+    
     if (single_motor_mode) {
-      if (yaw_correction >= 0.0) {
-        right_motor += yaw_correction;
+      if (scaled_yaw >= 0.0) {
+        right_motor += scaled_yaw;
       } else {
-        left_motor -= yaw_correction;
+        left_motor -= scaled_yaw;
       }
       state_tags.push_back(abs_heading_error < config_.single_motor_threshold * 0.5 ? "trim" : "nudge");
     } else {
-      right_motor += yaw_correction;
-      left_motor -= yaw_correction;
+      right_motor += scaled_yaw;
+      left_motor -= scaled_yaw;
       state_tags.push_back("differential");
     }
 

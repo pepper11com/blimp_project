@@ -42,6 +42,13 @@ struct PathFollowerConfig
   double single_motor_threshold{0.1745329252};           // 10 deg in radians
   double max_reverse_norm{0.20};
 
+  // Control mode arbitration (yaw vs altitude priority)
+  double yaw_priority_threshold{0.349};                  // 20 deg - prioritize yaw above this
+  double altitude_priority_threshold{0.5};               // 0.5m - prioritize altitude above this  
+  double servo_blend_time{3.0};                          // seconds to transition between modes (slower for inertia)
+  double yaw_good_threshold{0.0873};                     // 5 deg - heading is "good enough"
+  double altitude_good_threshold{0.2};                   // 0.2m - altitude is "good enough"
+
   PID::Gains yaw_gains{1.4, 0.0, 0.2, 0.1};
   PID::Gains altitude_gains{0.8, 0.0, 0.15, 0.2};
 };
@@ -63,6 +70,8 @@ struct ControlCommand
   double heading_error{0.0};
   double cross_track_error{0.0};
   double altitude_error{0.0};
+  double servo_blend_factor{0.0};  // 0=yaw_mode, 1=altitude_mode
+  std::string control_priority{"yaw"};  // "yaw", "altitude", "blending"
 
   bool has_active_path{false};
   bool goal_reached{false};
@@ -103,6 +112,10 @@ private:
   nav_msgs::msg::Path full_path_;
   std::size_t active_index_{0};
   bool goal_reached_{false};
+  
+  // Control mode state
+  double servo_blend_target_{0.0};  // Target blend factor
+  double servo_blend_current_{0.0}; // Current blend factor (smoothed)
 };
 
 }  // namespace blimp_navigation

@@ -32,7 +32,7 @@ blimp_navigator_node:
     servo_neutral_us: 1500.0
     servo_min_us: 500.0
     servo_max_us: 2500.0
-    servo_gain: 400.0
+    servo_gain: 1000.0
     servo_trim_left: 0.0
     servo_trim_right: 0.0
     invert_left_servo: true
