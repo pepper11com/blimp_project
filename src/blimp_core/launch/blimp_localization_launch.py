@@ -172,6 +172,9 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
 
+# ros2 run blimp_navigation blimp_navigator_node   --ros-args   --params-file ~/blimp_ws/src/blimp_navigation/param/blimp_navigator.yaml   -p enable_actuators:=true   -p serial_device:=/dev/ttyAMA0
+# ros2 launch blimp_ompl_planner ompl_planner_launch.py
+
 def generate_launch_description():
     parameters=[{
         'frame_id':'camera_link',
@@ -274,6 +277,8 @@ def generate_launch_description():
                 'unite_imu_method': LaunchConfiguration('unite_imu_method'),
                 'enable_infra1': 'true',
                 'enable_infra2': 'true',
+                'enable_depth': 'true',   # Enable depth for obstacle avoidance
+                'enable_color': 'false',  # Disable RGB camera (not needed)
                 'enable_sync': 'true'
             }.items(),
         ),

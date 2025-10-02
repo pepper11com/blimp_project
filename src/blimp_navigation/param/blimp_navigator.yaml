@@ -74,8 +74,14 @@ blimp_navigator_node:
     
     velocity_filter_alpha: 0.2
     predictive_brake_time: 2.0
-    obstacle_slowdown_distance: 1.0
-    obstacle_slowdown_min_scale: 0.3
+    
+    # Obstacle avoidance (depth camera)
+    # NOTE: Camera minimum range is ~0.33m, obstacles closer appear as 0.33m OR NOT AT ALL!
+    obstacle_slowdown_distance: 1.5    # Start slowing at 1.5m
+    obstacle_slowdown_min_scale: 0.3   # Slow to 30% at emergency distance
+    obstacle_emergency_distance: 0.35  # Stop forward thrust at 0.35m
+    obstacle_reverse_distance: 0.33    # Apply reverse thrust at camera minimum (0.33m or closer)
+    emergency_reverse_min_duration: 5.0  # Minimum time to reverse when triggered (seconds)
 
     pivot_heading_threshold_deg: 180.0
     pivot_min_turn_command: 0.08

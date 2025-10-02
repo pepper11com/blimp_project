@@ -9,6 +9,7 @@
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/path.hpp"
+#include "sensor_msgs/msg/image.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float32_multi_array.hpp"
 #include "tf2/exceptions.h"
@@ -143,6 +144,13 @@ private:
     altitude_gains.integral_limit = this->declare_parameter<double>("altitude_integral_limit", 0.2);
     follower_config.altitude_gains = altitude_gains;
 
+    // Obstacle avoidance parameters
+    follower_config.obstacle_slowdown_distance = this->declare_parameter<double>("obstacle_slowdown_distance", 1.5);
+    follower_config.obstacle_slowdown_min_scale = this->declare_parameter<double>("obstacle_slowdown_min_scale", 0.3);
+    follower_config.obstacle_emergency_distance = this->declare_parameter<double>("obstacle_emergency_distance", 0.35);
+    follower_config.obstacle_reverse_distance = this->declare_parameter<double>("obstacle_reverse_distance", 0.33);
+    follower_config.emergency_reverse_min_duration = this->declare_parameter<double>("emergency_reverse_min_duration", 5.0);
+
     path_follower_ = std::make_unique<PathFollower>(follower_config);
   }
 
@@ -157,6 +165,12 @@ private:
     path_subscription_ = this->create_subscription<nav_msgs::msg::Path>(
       path_topic_, qos,
       std::bind(&BlimpNavigatorNode::pathCallback, this, std::placeholders::_1));
+
+    // Subscribe to depth image for obstacle avoidance
+    auto depth_qos = rclcpp::QoS(rclcpp::KeepLast(1)).best_effort();
+    depth_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
+      "/camera/depth/image_rect_raw", depth_qos,
+      std::bind(&BlimpNavigatorNode::depthCallback, this, std::placeholders::_1));
 
     full_path_publisher_ = this->create_publisher<nav_msgs::msg::Path>(full_path_topic_, 10);
     remaining_path_publisher_ = this->create_publisher<nav_msgs::msg::Path>(remaining_path_topic_, 10);
@@ -173,6 +187,13 @@ private:
       std::chrono::duration_cast<std::chrono::nanoseconds>(period),
       std::bind(&BlimpNavigatorNode::controlLoop, this));
     last_control_time_ = this->now();
+  }
+
+  void depthCallback(const sensor_msgs::msg::Image::SharedPtr msg)
+  {
+    if (msg && path_follower_) {
+      path_follower_->setDepthImage(msg);
+    }
   }
 
   void pathCallback(const nav_msgs::msg::Path::SharedPtr msg)
@@ -324,9 +345,9 @@ private:
           "│   Lookahead:        %5.2f m                   │\n"
           "│   Altitude:         %+5.2f m  [Want: %s]      │\n"
           "│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   │\n"
-          "│ SMART CONTROL:                                │\n"
+          "│ SMART CONTROL:%37s│\n"
           "│   Velocity:     %4.2f m/s  StopDist: %4.2f m  │\n"
-          "│   Turn Factor:  %3.0f%%  (1.0=full, 0.5=half) │\n"
+          "│   Turn Factor:  %3.0f%%   ObstDist: %4.2f m    │\n"
           "│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   │\n"
           "│ MOTORS:                                       │\n"
           "│   Left:  %+5.2f  Right: %+5.2f  [Cmd: %s]     │\n"
@@ -347,9 +368,13 @@ private:
           control_command.lookahead_distance,
           current_pose.pose.position.z,
           wanted_alt,
+          (control_command.obstacle_distance <= 0.33 ? "  [EMERGENCY REVERSE!]" :
+           control_command.obstacle_distance < 0.35 ? "  [OBSTACLE STOPPED]" :
+           control_command.obstacle_distance < 1.5 ? "  [OBSTACLE SLOWING]" : ""),
           control_command.estimated_speed,
           control_command.stopping_distance,
           control_command.physics_slowdown * 100.0,
+          control_command.obstacle_distance,
           control_command.left_motor_norm,
           control_command.right_motor_norm,
           commanded_turn,
@@ -492,6 +517,7 @@ private:
   std::unique_ptr<ActuatorInterface> actuator_interface_;
 
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_subscription_;
+  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_subscription_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr full_path_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr remaining_path_publisher_;
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr debug_publisher_;

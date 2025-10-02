@@ -4,9 +4,12 @@
 #include <cstddef>
 #include <string>
 #include <vector>
+#include <memory>
+#include <chrono>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/path.hpp"
+#include "sensor_msgs/msg/image.hpp"
 
 #include "blimp_navigation/pid.hpp"
 
@@ -38,8 +41,12 @@ struct PathFollowerConfig
   double max_altitude_rate{0.3};                     // m/s - maximum climb/descent rate
   double velocity_filter_alpha{0.2};                 // EMA filter for velocity estimation
   double predictive_brake_time{2.0};                 // seconds - how far ahead to predict
-  double obstacle_slowdown_distance{1.0};            // meters - start slowing when this close
-  double obstacle_slowdown_min_scale{0.3};           // minimum speed near obstacles
+  double obstacle_slowdown_distance{1.5};            // Start slowing at this distance (m)
+  double obstacle_slowdown_min_scale{0.3};           // Minimum speed scale (30%)
+  double obstacle_emergency_distance{0.35};          // Emergency stop distance (m)
+  double obstacle_reverse_distance{0.33};            // Apply reverse thrust below this (camera min range)
+  double emergency_reverse_min_duration{5.0};        // Minimum time to reverse (seconds)
+  double obstacle_cone_half_angle{0.524};            // radians (30° = π/6) - detection cone
 
   double max_forward_norm{0.20};
   double pivot_heading_threshold{1.0471975512};          // 60 deg in radians
@@ -82,6 +89,7 @@ struct ControlCommand
   double estimated_speed{0.0};      // m/s - forward velocity
   double stopping_distance{0.0};    // m - predicted distance to stop
   double physics_slowdown{1.0};     // 0-1 - turn slowdown factor
+  double obstacle_distance{99.9};   // m - nearest obstacle in path
 
   bool has_active_path{false};
   bool goal_reached{false};
@@ -94,6 +102,7 @@ public:
 
   void setPath(const nav_msgs::msg::Path &path);
   void clearPath();
+  void setDepthImage(const sensor_msgs::msg::Image::SharedPtr depth_msg);
 
   ControlCommand update(const geometry_msgs::msg::PoseStamped &pose,
                         double dt,
@@ -134,6 +143,13 @@ private:
   double velocity_z_{0.0};  // m/s in z direction (vertical)
   double forward_speed_{0.0}; // m/s along heading
   bool velocity_initialized_{false};
+  
+  // Depth image for obstacle detection
+  sensor_msgs::msg::Image::SharedPtr latest_depth_;
+
+  // Emergency reverse timer
+  std::chrono::steady_clock::time_point emergency_reverse_start_time_;
+  bool in_emergency_reverse_{false};
   
   // Helper functions
   void updateVelocityEstimate(const geometry_msgs::msg::Point &current_pos, double dt);

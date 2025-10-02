@@ -237,13 +237,116 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
     forward *= physics_turn_scale;
   }
   
-  // Obstacle proximity slowdown (placeholder for future OctoMap integration)
+  // Obstacle proximity slowdown using depth camera
   const double obstacle_scale = getObstacleProximityFactor(current);
-  forward *= obstacle_scale;
+  
+  // Check for emergency reverse thrust condition
+  double obstacle_dist_check = 99.9;
+  if (latest_depth_ && !latest_depth_->data.empty()) {
+    const uint32_t width = latest_depth_->width;
+    const uint32_t height = latest_depth_->height;
+    if (width > 0 && height > 0) {
+      const uint32_t roi_x_start = width * 0.375;
+      const uint32_t roi_x_end = width * 0.625;
+      const uint32_t roi_y_start = height * 0.3;
+      const uint32_t roi_y_end = height * 0.7;
+      const uint16_t* depth_data = reinterpret_cast<const uint16_t*>(latest_depth_->data.data());
+      
+      std::vector<double> valid_depths;
+      for (uint32_t y = roi_y_start; y < roi_y_end && y < height; ++y) {
+        for (uint32_t x = roi_x_start; x < roi_x_end && x < width; ++x) {
+          const uint16_t depth_mm = depth_data[y * width + x];
+          if (depth_mm > 200 && depth_mm < 5000) {
+            valid_depths.push_back(depth_mm / 1000.0);
+          }
+        }
+      }
+      
+      const size_t roi_pixels = (roi_y_end - roi_y_start) * (roi_x_end - roi_x_start);
+      const size_t min_cluster_size = roi_pixels * 0.05;
+      
+      if (valid_depths.size() >= min_cluster_size) {
+        std::sort(valid_depths.begin(), valid_depths.end());
+        const size_t percentile_idx = valid_depths.size() / 10;
+        obstacle_dist_check = valid_depths[percentile_idx];
+      }
+    }
+  }
+  
+  // Emergency reverse thrust when at camera minimum range
+  // Add small margin above configured threshold to catch boundary readings
+  const auto now = std::chrono::steady_clock::now();
+  const double reverse_trigger_distance = config_.obstacle_reverse_distance + 0.01; // +1cm margin
+  
+  if (obstacle_dist_check < reverse_trigger_distance) {
+    // Trigger emergency reverse
+    if (!in_emergency_reverse_) {
+      in_emergency_reverse_ = true;
+      emergency_reverse_start_time_ = now;
+    }
+  }
+  
+  // Check if we should continue emergency reverse
+  if (in_emergency_reverse_) {
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - emergency_reverse_start_time_);
+    const double reverse_elapsed = elapsed.count() / 1000.0;
+    
+    // Continue reversing for minimum duration OR until obstacle clears to safe distance
+    if (reverse_elapsed < config_.emergency_reverse_min_duration || obstacle_dist_check < 0.5) {
+      // Keep reversing
+      forward = -0.4 * config_.max_reverse_norm; // 40% reverse
+    } else {
+      // Minimum time elapsed AND obstacle is far enough - exit emergency reverse
+      in_emergency_reverse_ = false;
+    }
+  } else if (obstacle_dist_check < config_.obstacle_emergency_distance) {
+    // At emergency distance (but not in full reverse), stop completely
+    forward = 0.0;
+  } else {
+    // Normal slowdown based on distance
+    forward *= obstacle_scale;
+  }
+  
+  // Get obstacle distance for display (using same filtered logic)
+  double obstacle_dist = 99.9; // Default: no obstacle detected
+  if (latest_depth_ && !latest_depth_->data.empty()) {
+    const uint32_t width = latest_depth_->width;
+    const uint32_t height = latest_depth_->height;
+    if (width > 0 && height > 0) {
+      // Use same tighter ROI
+      const uint32_t roi_x_start = width * 0.375;
+      const uint32_t roi_x_end = width * 0.625;
+      const uint32_t roi_y_start = height * 0.3;
+      const uint32_t roi_y_end = height * 0.7;
+      const uint16_t* depth_data = reinterpret_cast<const uint16_t*>(latest_depth_->data.data());
+      
+      std::vector<double> valid_depths;
+      for (uint32_t y = roi_y_start; y < roi_y_end && y < height; ++y) {
+        for (uint32_t x = roi_x_start; x < roi_x_end && x < width; ++x) {
+          const uint16_t depth_mm = depth_data[y * width + x];
+          if (depth_mm > 200 && depth_mm < 5000) {
+            valid_depths.push_back(depth_mm / 1000.0);
+          }
+        }
+      }
+      
+      if (valid_depths.size() >= 10) { // Need minimum cluster
+        std::sort(valid_depths.begin(), valid_depths.end());
+        obstacle_dist = valid_depths[valid_depths.size() / 10]; // 10th percentile
+      }
+    }
+  }
 
-  forward = std::clamp(forward, 0.0, config_.max_speed_command);
-  if (forward > 0.0) {
-    forward = std::max(forward, config_.min_speed_command);
+  // Clamp forward, but allow reverse thrust for obstacle avoidance
+  if (forward < 0.0) {
+    // Reversing for obstacle avoidance - clamp to max reverse
+    forward = std::clamp(forward, -config_.max_reverse_norm, 0.0);
+  } else {
+    // Normal forward motion
+    forward = std::clamp(forward, 0.0, config_.max_speed_command);
+    if (forward > 0.0) {
+      forward = std::max(forward, config_.min_speed_command);
+    }
   }
 
   double left_motor = 0.0;
@@ -268,22 +371,27 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
     left_motor = forward;
     right_motor = forward;
 
-    // Scale yaw authority based on servo deflection
-    // Quadratic falloff: 100% effective at blend=0, 0% at blend=1 (prevents roll in altitude mode)
-    const double yaw_effectiveness = (1.0 - servo_blend_current_) * (1.0 - servo_blend_current_);
-    const double scaled_yaw = yaw_correction * yaw_effectiveness;
-    
-    if (single_motor_mode) {
-      if (scaled_yaw >= 0.0) {
-        right_motor += scaled_yaw;
-      } else {
-        left_motor -= scaled_yaw;
-      }
-      state_tags.push_back(abs_heading_error < config_.single_motor_threshold * 0.5 ? "trim" : "nudge");
+    // If reversing for obstacle avoidance, apply equally to both motors (no differential)
+    if (forward < 0.0) {
+      state_tags.push_back("emergency_reverse");
     } else {
-      right_motor += scaled_yaw;
-      left_motor -= scaled_yaw;
-      state_tags.push_back("differential");
+      // Scale yaw authority based on servo deflection
+      // Quadratic falloff: 100% effective at blend=0, 0% at blend=1 (prevents roll in altitude mode)
+      const double yaw_effectiveness = (1.0 - servo_blend_current_) * (1.0 - servo_blend_current_);
+      const double scaled_yaw = yaw_correction * yaw_effectiveness;
+      
+      if (single_motor_mode) {
+        if (scaled_yaw >= 0.0) {
+          right_motor += scaled_yaw;
+        } else {
+          left_motor -= scaled_yaw;
+        }
+        state_tags.push_back(abs_heading_error < config_.single_motor_threshold * 0.5 ? "trim" : "nudge");
+      } else {
+        right_motor += scaled_yaw;
+        left_motor -= scaled_yaw;
+        state_tags.push_back("differential");
+      }
     }
 
     if (goal_distance < config_.brake_distance) {
@@ -331,6 +439,7 @@ ControlCommand PathFollower::update(const geometry_msgs::msg::PoseStamped &pose,
   command.stopping_distance = velocity_initialized_ ? predictStoppingDistance(forward_speed_) : 0.0;
   command.physics_slowdown = BlimpDynamics::turnSlowdownFactor(heading_error, 
                                                                 velocity_initialized_ ? forward_speed_ : 0.0);
+  command.obstacle_distance = obstacle_dist;
 
   remaining_path.header = full_path_.header;
   const auto offset = static_cast<std::ptrdiff_t>(active_index_);
@@ -479,18 +588,84 @@ double PathFollower::predictStoppingDistance(double current_speed) const
   return stopping_distance + reaction_distance;
 }
 
+void PathFollower::setDepthImage(const sensor_msgs::msg::Image::SharedPtr depth_msg)
+{
+  latest_depth_ = depth_msg;
+}
+
 double PathFollower::getObstacleProximityFactor(const geometry_msgs::msg::Point &current_pos) const
 {
-  // TODO: Query OctoMap for nearest obstacle distance
-  // For now, return 1.0 (no slowdown) as placeholder
-  // This will be integrated with OctoMap in the future
+  if (!latest_depth_ || latest_depth_->data.empty()) {
+    return 1.0; // No depth data available
+  }
   
-  // When implemented, this should return:
-  // - 1.0 if distance > obstacle_slowdown_distance
-  // - Linear scale from 1.0 to obstacle_slowdown_min_scale as distance decreases
-  // - obstacle_slowdown_min_scale if very close
+  // Extract minimum depth in forward-facing ROI (region of interest)
+  // Tighter cone: center 25% of image width, middle 40% of height
+  // This focuses narrowly on obstacles directly ahead
   
-  return 1.0; // No obstacle slowdown yet (needs OctoMap integration)
+  const uint32_t width = latest_depth_->width;
+  const uint32_t height = latest_depth_->height;
+  
+  if (width == 0 || height == 0) {
+    return 1.0;
+  }
+  
+  // Define tighter ROI bounds (narrower cone)
+  const uint32_t roi_x_start = width * 0.375;  // Left edge (37.5% from left)
+  const uint32_t roi_x_end = width * 0.625;    // Right edge (62.5% from left) = 25% width
+  const uint32_t roi_y_start = height * 0.3;   // Top edge (30% from top)
+  const uint32_t roi_y_end = height * 0.7;     // Bottom edge (70% from top) = 40% height
+  
+  // Collect valid depth readings for filtering
+  std::vector<double> valid_depths;
+  valid_depths.reserve((roi_x_end - roi_x_start) * (roi_y_end - roi_y_start));
+  
+  const uint16_t* depth_data = reinterpret_cast<const uint16_t*>(latest_depth_->data.data());
+  
+  for (uint32_t y = roi_y_start; y < roi_y_end && y < height; ++y) {
+    for (uint32_t x = roi_x_start; x < roi_x_end && x < width; ++x) {
+      const uint32_t index = y * width + x;
+      const uint16_t depth_mm = depth_data[index];
+      
+      // More strict filtering: 
+      // - Min 200mm (ignore very close noise)
+      // - Max 5000mm (ignore far noise and invalid readings)
+      if (depth_mm > 200 && depth_mm < 5000) {
+        const double depth_m = depth_mm / 1000.0;
+        valid_depths.push_back(depth_m);
+      }
+    }
+  }
+  
+  // Need at least 5% of ROI pixels to have valid depth (cluster filtering)
+  const size_t min_cluster_size = ((roi_x_end - roi_x_start) * (roi_y_end - roi_y_start)) * 0.05;
+  if (valid_depths.size() < min_cluster_size) {
+    return 1.0; // Not enough valid readings, assume clear (noise rejection)
+  }
+  
+  // Sort to find percentile instead of absolute minimum (reduces noise sensitivity)
+  std::sort(valid_depths.begin(), valid_depths.end());
+  
+  // Use 10th percentile instead of minimum (ignores outlier noise pixels)
+  const size_t percentile_idx = valid_depths.size() / 10;
+  const double min_depth = valid_depths[percentile_idx];
+  
+  // If no valid depth found, assume clear
+  if (min_depth == std::numeric_limits<double>::max()) {
+    return 1.0;
+  }
+  
+  // Apply slowdown based on obstacle distance
+  if (min_depth < config_.obstacle_emergency_distance) {
+    return config_.obstacle_slowdown_min_scale; // Emergency! Very close
+  } else if (min_depth < config_.obstacle_slowdown_distance) {
+    // Linear interpolation between emergency and slowdown distances
+    const double range = config_.obstacle_slowdown_distance - config_.obstacle_emergency_distance;
+    const double ratio = (min_depth - config_.obstacle_emergency_distance) / range;
+    return config_.obstacle_slowdown_min_scale + ratio * (1.0 - config_.obstacle_slowdown_min_scale);
+  }
+  
+  return 1.0; // Clear path, full speed
 }
 
 }  // namespace blimp_navigation
